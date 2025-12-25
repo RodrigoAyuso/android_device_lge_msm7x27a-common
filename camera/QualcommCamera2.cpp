@@ -155,26 +155,50 @@ QCameraParameters* util_get_HAL_parameter( struct camera_device * device)
 }
 #endif //mzhu
 
+/* MODIFICATION 1: Force return of 2 cameras if there is only 1 */
 extern "C" int get_number_of_cameras()
 {
     /* try to query every time we get the call!*/
-
     ALOGD("Q%s: E", __func__);
-    return android::HAL_getNumberOfCameras( );
+    int num_cameras = android::HAL_getNumberOfCameras();
+    
+    // If only the rear one exists, we say we have 2 to enable the switch button
+    if (num_cameras == 1) {
+        return 2;
+    }
+    return num_cameras;
 }
 
+/* MODIFICATION 2: Intercept Camera 1 Info and point to 0 as Front */
 extern "C" int get_camera_info(int camera_id, struct camera_info *info)
 {
     int rc = -1;
     ALOGD("Q%s: E", __func__);
+    
+    // Actual physical ID to query the hardware
+    int physical_id = camera_id;
+    
+    // If Android asks for camera 1 (which doesn't exist), we query 0
+    if (camera_id == 1) {
+        physical_id = 0;
+    }
+
     if(info) {
         struct CameraInfo camInfo;
         memset(&camInfo, -1, sizeof (struct CameraInfo));
-        android::HAL_getCameraInfo(camera_id, &camInfo);
+        
+        // Pass physical_id to the original HAL
+        android::HAL_getCameraInfo(physical_id, &camInfo);
+        
         if (camInfo.facing >= 0) {
             rc = 0;
             info->facing = camInfo.facing;
             info->orientation = camInfo.orientation;
+
+            // If it is the fake camera (1), force it to be identified as FRONT
+            if (camera_id == 1) {
+                info->facing = CAMERA_FACING_FRONT;
+            }
         }
     }
     ALOGD("Q%s: X", __func__);
@@ -183,6 +207,7 @@ extern "C" int get_camera_info(int camera_id, struct camera_info *info)
 
 
 /* HAL should return NULL if it fails to open camera hardware. */
+/* MODIFICATION 3: Redirect camera 1 opening to hardware 0 */
 extern "C" int  camera_device_open(
   const struct hw_module_t* module, const char* id,
           struct hw_device_t** hw_device)
@@ -192,6 +217,12 @@ extern "C" int  camera_device_open(
     camera_device *device = NULL;
     if(module && id && hw_device) {
         int cameraId = atoi(id);
+        
+        // Define physical ID. If ID 1 is requested, we use ID 0.
+        int physicalId = cameraId;
+        if (cameraId == 1) {
+            physicalId = 0;
+        }
 
         if (!strcmp(module->name, camera_common.name)) {
             camera_hardware_t *camHal =
@@ -203,9 +234,12 @@ extern "C" int  camera_device_open(
 		    }
             /* we have the camera_hardware obj malloced */
             memset(camHal, 0, sizeof (camera_hardware_t));
-            camHal->hardware = new QCameraHardwareInterface(cameraId, mode); //HAL_openCameraHardware(cameraId);
+            
+            // We use physicalId to open the real hardware
+            camHal->hardware = new QCameraHardwareInterface(physicalId, mode); 
+            
             if (camHal->hardware && camHal->hardware->isCameraReady()) {
-				camHal->cameraId = cameraId;
+				camHal->cameraId = cameraId; // We keep the original logical ID
 		        device = &camHal->hw_dev;
                 device->common.close = close_camera_device;
                 device->ops = &camera_ops;
