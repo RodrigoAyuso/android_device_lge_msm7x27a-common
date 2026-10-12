@@ -1,0 +1,16 @@
+diff --git a/device/src/controller.c b/device/src/controller.c
+--- a/device/src/controller.c
++++ b/device/src/controller.c
+@@ -266,7 +266,11 @@ static future_t *start_up(void) {
+         &number_of_local_supported_codecs, local_supported_codecs);
+   }
+
+-  assert(HCI_READ_ENCR_KEY_SIZE_SUPPORTED(supported_commands));
++  if (!HCI_READ_ENCR_KEY_SIZE_SUPPORTED(supported_commands)) {
++    LOG_WARN(LOG_TAG,
++             "%s: HCI Read Encryption Key Size not supported by controller",
++             __func__);
++  }
+
+   readable = true;
+   return future_new_immediate(FUTURE_SUCCESS);
