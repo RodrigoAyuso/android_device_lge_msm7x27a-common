@@ -116,6 +116,11 @@ PRODUCT_PACKAGES += \
 PRODUCT_PACKAGES += \
     camera.msm7x27a
 
+# Legacy camera metadata contains pointers shared with the video encoder.
+PRODUCT_PROPERTY_OVERRIDES += \
+    media.stagefright.legacyencoder=true \
+    media.stagefright.less-secure=true
+
 # HWComposer
 PRODUCT_PACKAGES += \
     hwcomposer.msm7x27a
