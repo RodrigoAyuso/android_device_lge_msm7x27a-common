@@ -914,9 +914,12 @@ void QCameraHardwareInterface::processCtrlEvent(mm_camera_ctrl_event_t *event, a
             app_cb->argm_notify.ext1 = CAMERA_ERROR_UNKNOWN;
             app_cb->argm_notify.cookie =  mCallbackCookie;
             break;
-	case MM_CAMERA_CTRL_EVT_WDN_HDR_START:
+        case MM_CAMERA_CTRL_EVT_WDN_HDR_START:
+            // The shutter callback may re-enter the HAL; restore the lock
+            // before Autolock releases it when this function returns.
             mLock.unlock();
             wdnHdrStartEvent();
+            mLock.lock();
             break;
         case MM_CAMERA_CTRL_EVT_SNAPSHOT_CONFIG_DONE:
             ALOGV("%s: MM_CAMERA_CTRL_EVT_SNAPSHOT_CONFIG_DONE", __func__);

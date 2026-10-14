@@ -938,8 +938,14 @@ typedef enum {
   MM_CAMERA_CTRL_EVT_SNAPSHOT_CONFIG_DONE,
   MM_CAMERA_CTRL_EVT_WDN_DONE, // wavelet denoise done
   MM_CAMERA_CTRL_EVT_HDR_DONE,
+#ifdef LGE_CAMERA_WDN_HDR_START_BEFORE_ERROR
+  // Event IDs are shared with liboemcamera: vee3 uses 6 for WDN/HDR start.
+  MM_CAMERA_CTRL_EVT_WDN_HDR_START,
+  MM_CAMERA_CTRL_EVT_ERROR,
+#else
   MM_CAMERA_CTRL_EVT_ERROR,
   MM_CAMERA_CTRL_EVT_WDN_HDR_START,
+#endif
   MM_CAMERA_CTRL_EVT_MAX
 }mm_camera_ctrl_event_type_t;
 

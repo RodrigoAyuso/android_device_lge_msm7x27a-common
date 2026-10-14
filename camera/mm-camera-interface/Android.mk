@@ -17,6 +17,11 @@ MM_CAM_FILES := \
         mm_omx_jpeg_encoder.c
 
 LOCAL_CFLAGS += -D_ANDROID_
+
+# Use the same control-event ABI as camera.msm7x27a.
+ifeq ($(TARGET_DEVICE),vee3)
+LOCAL_CFLAGS += -DLGE_CAMERA_WDN_HDR_START_BEFORE_ERROR
+endif
 LOCAL_COPY_HEADERS_TO := mm-camera-interface
 LOCAL_COPY_HEADERS += mm_camera_interface2.h
 LOCAL_COPY_HEADERS += mm_omx_jpeg_encoder.h
