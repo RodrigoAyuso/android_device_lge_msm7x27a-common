@@ -1351,7 +1351,7 @@ void QCameraHardwareInterface::initDefaultParameters()
     //mUseOverlay = useOverlay();
     mParameters.set("zoom", 0);
 
-    int mNuberOfVFEOutputs;
+    int mNuberOfVFEOutputs = 0;
     ret = cam_config_get_parm(mCameraId, MM_CAMERA_PARM_VFE_OUTPUT_ENABLE, &mNuberOfVFEOutputs);
     if(ret != MM_CAMERA_OK) {
         ALOGE("get parm MM_CAMERA_PARM_VFE_OUTPUT_ENABLE  failed");
@@ -1360,6 +1360,12 @@ void QCameraHardwareInterface::initDefaultParameters()
     if(mNuberOfVFEOutputs == 1)
     {
        mParameters.set(QCameraParameters::KEY_QC_SINGLE_ISP_OUTPUT_ENABLED, "true");
+       // Camera1 uses a missing video-size-values key to indicate that
+       // preview and recording share one output. CameraSource then sets
+       // the preview size to the requested encoder resolution.
+       mParameters.remove(QCameraParameters::KEY_SUPPORTED_VIDEO_SIZES);
+       mParameters.remove(QCameraParameters::KEY_PREFERRED_PREVIEW_SIZE_FOR_VIDEO);
+       mParameters.remove(QCameraParameters::KEY_VIDEO_SIZE);
     } else {
        mParameters.set(QCameraParameters::KEY_QC_SINGLE_ISP_OUTPUT_ENABLED, "false");
     }
@@ -2558,25 +2564,30 @@ status_t QCameraHardwareInterface::setVideoSize(const QCameraParameters& params)
     ALOGD("%s: E", __func__);
     str = params.get(QCameraParameters::KEY_VIDEO_SIZE);
     str_t = mParameters.get(CameraParameters::KEY_VIDEO_SIZE);
-    if(!str) {
-        mParameters.set(QCameraParameters::KEY_VIDEO_SIZE, "");
+    if(!str || !str[0]) {
+        mParameters.remove(QCameraParameters::KEY_VIDEO_SIZE);
         //If application didn't set this parameter string, use the values from
         //getPreviewSize() as video dimensions.
         ALOGE("No Record Size requested, use the preview dimensions");
+        if(videoWidth != mPreviewWidth || videoHeight != mPreviewHeight) {
+            mRestartPreview = true;
+        }
         videoWidth = mPreviewWidth;
         videoHeight = mPreviewHeight;
     } else {
         //Extract the record witdh and height that application requested.
         ALOGI("%s: requested record size %s", __func__, str);
         if(!parse_size(str, videoWidth, videoHeight)) {
-            parse_size(str_t, old_vid_w, old_vid_h);
+            if(str_t && str_t[0]) {
+                parse_size(str_t, old_vid_w, old_vid_h);
+            }
             if(old_vid_w != videoWidth || old_vid_h != videoHeight) {
                 mRestartPreview = true;
                 ALOGE("%s: Video sizes changes, Restart preview...", __func__, str);
             }
 
 	    bool ret;
-            int mNuberOfVFEOutputs;
+            int mNuberOfVFEOutputs = 0;
             ret = cam_config_get_parm(mCameraId, MM_CAMERA_PARM_VFE_OUTPUT_ENABLE, &mNuberOfVFEOutputs);
             if(ret != MM_CAMERA_OK) {
                 ALOGE("get parm MM_CAMERA_PARM_VFE_OUTPUT_ENABLE  failed");
@@ -2621,14 +2632,14 @@ status_t QCameraHardwareInterface::setVideoSize(const QCameraParameters& params)
                 mParameters.setPreviewSize(mPreviewWidth, mPreviewHeight);
             }
 
-            if(mIs3DModeOn == true) {
-                /* As preview and video frames are same in 3D mode,
+            if(mIs3DModeOn == true || mNuberOfVFEOutputs == 1) {
+                /* As preview and video frames share one output,
                  * preview size should be same as video size. This
                  * cahnge is needed to take of video resolutions
                  * like 720P and 1080p where the application can
                  * request different preview sizes like 768x432
                  */
-                ALOGI("3D mod is on");
+                ALOGI("Preview and recording share one output");
                 mPreviewWidth = videoWidth;
                 mPreviewHeight = videoHeight;
                 mParameters.setPreviewSize(mPreviewWidth, mPreviewHeight);
