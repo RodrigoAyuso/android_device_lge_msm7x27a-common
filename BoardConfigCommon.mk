@@ -57,6 +57,11 @@ KERNEL_TOOLCHAIN_PREFIX := arm-linux-androideabi-
 KERNEL_TOOLCHAIN := "$(ANDROID_BUILD_TOP)/prebuilts/gcc/$(HOST_OS)-x86/arm/arm-linux-androideabi-4.9/bin/"
 KERNEL_HAS_FINIT_MODULE := false
 
+# CM 14.1 applies this override after both kernel and header defconfigs.
+# All devices using the common boot ramdisk must be able to decode LZ4.
+KERNEL_CONFIG_OVERRIDE := CONFIG_RD_LZ4=y
+BOARD_CUSTOM_BOOTIMG_MK := device/lge/msm7x27a-common/lz4-boot.mk
+
 # Partitions
 BOARD_FLASH_BLOCK_SIZE := 131072
 TARGET_USERIMAGES_USE_EXT4 := true
