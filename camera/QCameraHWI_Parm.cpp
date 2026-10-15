@@ -1236,11 +1236,16 @@ void QCameraHardwareInterface::initDefaultParameters()
     //Set Streaming Textures
     mParameters.set("strtextures", "OFF");
 
-    //Set Denoise
+    // Only advertise WDN when this sensor supports setting it.
+    const bool denoiseSupported =
+        (cam_config_is_parm_supported(mCameraId, MM_CAMERA_PARM_WAVELET_DENOISE)
+         & MM_CAMERA_PARM_SUPPORT_SET) != 0;
     mParameters.set(QCameraParameters::KEY_QC_DENOISE,
-                    QCameraParameters::DENOISE_ON);
+                    denoiseSupported ? QCameraParameters::DENOISE_ON
+                                     : QCameraParameters::DENOISE_OFF);
     mParameters.set(QCameraParameters::KEY_QC_SUPPORTED_DENOISE,
-                        denoise_value);
+                    denoiseSupported ? denoise_value.string()
+                                     : QCameraParameters::DENOISE_OFF);
     //Set Touch AF/AEC
     mParameters.set(QCameraParameters::KEY_QC_TOUCH_AF_AEC,
                     QCameraParameters::TOUCH_AF_AEC_OFF);
@@ -2508,10 +2513,14 @@ status_t QCameraHardwareInterface::setWaveletDenoise(const QCameraParameters& pa
     ALOGD("%s",__func__);
     status_t rc = NO_ERROR;
     rc = cam_config_is_parm_supported(mCameraId, MM_CAMERA_PARM_WAVELET_DENOISE);
-    if(rc != MM_CAMERA_PARM_SUPPORT_SET) {
-        ALOGE("Wavelet Denoise is not supported for this sensor");
-        /* TO DO */
-//        return NO_ERROR;
+    if(!(rc & MM_CAMERA_PARM_SUPPORT_SET)) {
+        // Do not enable an OEM post-processing path the sensor does not
+        // advertise. Some blobs accept the command but can stall delivery.
+        ALOGD("Wavelet Denoise unsupported; keeping it disabled");
+        mDenoiseValue = 0;
+        mParameters.set(QCameraParameters::KEY_QC_DENOISE,
+                        QCameraParameters::DENOISE_OFF);
+        return NO_ERROR;
     }
     const char *str = params.get(QCameraParameters::KEY_QC_DENOISE);
     if (str != NULL) {

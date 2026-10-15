@@ -60,6 +60,7 @@ KERNEL_HAS_FINIT_MODULE := false
 # CM 14.1 applies this override after both kernel and header defconfigs.
 # All devices using the common boot ramdisk must be able to decode LZ4.
 KERNEL_CONFIG_OVERRIDE := CONFIG_RD_LZ4=y
+TARGET_NOT_USE_GZIP_RECOVERY_RAMDISK := true
 BOARD_CUSTOM_BOOTIMG_MK := device/lge/msm7x27a-common/lz4-boot.mk
 
 # Partitions
