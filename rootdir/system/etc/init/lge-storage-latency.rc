@@ -1,0 +1,12 @@
+# V1/Vee3 internal eMMC profile. Imported by init after /system is mounted.
+# Keep filesystem barriers, journaling and fsync unchanged.
+on boot
+    # Prefer reads while retaining bounded opportunities for writes.
+    write /sys/block/mmcblk0/queue/scheduler deadline
+    write /sys/block/mmcblk0/queue/iosched/read_expire 100
+    write /sys/block/mmcblk0/queue/iosched/write_expire 1000
+    write /sys/block/mmcblk0/queue/iosched/writes_starved 2
+    write /sys/block/mmcblk0/queue/iosched/fifo_batch 4
+
+    # Avoid large speculative reads competing for RAM during app launches.
+    write /sys/block/mmcblk0/queue/read_ahead_kb 128
