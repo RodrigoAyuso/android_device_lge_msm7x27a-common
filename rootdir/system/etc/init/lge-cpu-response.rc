@@ -1,0 +1,10 @@
+# V1/Vee3 ondemand response profile; no clock, voltage or policy-limit changes.
+on boot
+    # The governor clamps this request to its hardware/accounting minimum.
+    write /sys/devices/system/cpu/cpufreq/ondemand/sampling_rate 20000
+    write /sys/devices/system/cpu/cpufreq/ondemand/up_threshold 80
+    write /sys/devices/system/cpu/cpufreq/ondemand/down_differential 10
+    write /sys/devices/system/cpu/cpufreq/ondemand/sampling_down_factor 2
+
+    # Account for storage waits during app startup. Power HAL video votes remain.
+    write /sys/devices/system/cpu/cpufreq/ondemand/io_is_busy 1
