@@ -1,27 +1,68 @@
 #!/usr/bin/env bash
-# Apply the LineageOS 14.1 Bluetooth compatibility patch after repo sync.
-# This modifies only the system/bt working tree, not its upstream Git history.
+# Apply the device-carried Bluetooth and ART patches after repo sync.
+# Only the target working files are changed; indexes and histories are preserved.
 set -euo pipefail
+
+check_only=false
+case "${1:-}" in
+    --check) check_only=true; shift ;;
+    --help|-h)
+        echo "Usage: bash device/lge/msm7x27a-common/apply-patches.sh [--check]"
+        echo "Check both device patches before applying either working-tree change."
+        exit 0
+        ;;
+esac
+if (( $# != 0 )); then
+    echo "ERROR: unexpected argument: $1" >&2
+    exit 2
+fi
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 top="$(cd "$script_dir/../../.." && pwd)"
-bt_dir="$top/system/bt"
-patch_file="$script_dir/patches/system_bt/0001-bt-warn-if-controller-misses-read-encryption-key-size.patch"
+projects=("system/bt" "art")
+targets=("device/src/controller.c" "compiler/image_writer.cc")
+patches=(
+    "patches/system_bt/0001-bt-warn-if-controller-misses-read-encryption-key-size.patch"
+    "patches/art/0001-fix-reflected-method-image-address.patch"
+)
+states=()
 
-if [[ ! -f "$bt_dir/device/src/controller.c" ]]; then
-    echo "ERROR: system/bt/device/src/controller.c was not found." >&2
-    echo "Run repo sync to fetch system/bt (cm-14.1 branch)." >&2
-    exit 1
+# Preflight every repository before changing any working file.
+for i in "${!projects[@]}"; do
+    repo="$top/${projects[$i]}"
+    patch_file="$script_dir/${patches[$i]}"
+    target="$repo/${targets[$i]}"
+    if [[ ! -e "$repo/.git" || ! -f "$target" || ! -f "$patch_file" ]]; then
+        echo "ERROR: missing checkout, source file, or device patch for ${projects[$i]}." >&2
+        echo "Check repo sync and the contents of device/lge/msm7x27a-common/patches." >&2
+        exit 1
+    fi
+    if [[ -n "$(git -C "$repo" ls-files --unmerged)" ]]; then
+        echo "ERROR: resolve the unmerged index entries in ${projects[$i]} first." >&2
+        exit 1
+    fi
+    if git -C "$repo" apply --check "$patch_file" >/dev/null 2>&1; then
+        states[$i]=pending
+        echo "msm7x27a-common: ${projects[$i]}: patch pending."
+    elif git -C "$repo" apply --reverse --check "$patch_file" >/dev/null 2>&1; then
+        states[$i]=applied
+        echo "msm7x27a-common: ${projects[$i]}: patch already applied."
+    else
+        echo "ERROR: device patch conflicts with ${projects[$i]}/${targets[$i]}." >&2
+        git -C "$repo" apply --check "$patch_file" >&2 || true
+        echo "Preflight failed; no working files, indexes, or histories were changed." >&2
+        exit 1
+    fi
+done
+
+if "$check_only"; then
+    echo "Preflight passed; no working files, indexes, or histories were changed."
+    exit 0
 fi
 
-if git -C "$bt_dir" apply --check "$patch_file" >/dev/null 2>&1; then
-    git -C "$bt_dir" apply "$patch_file"
-    echo "msm7x27a-common: Bluetooth compatibility patch applied."
-elif git -C "$bt_dir" apply --reverse --check "$patch_file" >/dev/null 2>&1; then
-    echo "msm7x27a-common: Bluetooth compatibility patch is already applied; no changes needed."
-else
-    echo "ERROR: Bluetooth compatibility patch does not match the current system/bt source." >&2
-    echo "Check the branch, local modifications, and device/src/controller.c." >&2
-    echo "No files were modified during this run." >&2
-    exit 1
-fi
+for i in "${!projects[@]}"; do
+    [[ "${states[$i]}" == pending ]] || continue
+    git -C "$top/${projects[$i]}" apply "$script_dir/${patches[$i]}"
+    echo "msm7x27a-common: ${projects[$i]}: device patch applied."
+done
+echo "Device patches are ready. Target indexes and commit histories were preserved."
