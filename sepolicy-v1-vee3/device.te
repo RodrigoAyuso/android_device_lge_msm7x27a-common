@@ -1,0 +1,8 @@
+# Legacy hardware interfaces used by the V1 and Vee3 blobs.
+type lge_oncrpc_device, dev_type;
+type lge_rmt_storage_device, dev_type;
+type lge_modem_device, dev_type;
+type lge_sensors_data_file, file_type, data_file_type;
+type sysfs_lge_sensors, fs_type, sysfs_type;
+type sysfs_lge_vibrator, fs_type, sysfs_type;
+type sysfs_lge_kcal, fs_type, sysfs_type;

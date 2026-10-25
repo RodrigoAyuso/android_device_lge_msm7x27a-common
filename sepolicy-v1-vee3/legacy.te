@@ -1,0 +1,55 @@
+# No permissive domains or generic device/init socket grants are added.
+# The existing TARGET_NEEDS_PLATFORM_TEXT_RELOCATIONS exception applies only
+# to system_file, not exec_type. Keep dedicated entrypoints, then exec the
+# relocated blob copy inside its already established daemon domain.
+allow { mm-qcamerad netmgrd qmuxd rmt_storage } shell_exec:file { rx_file_perms entrypoint };
+allow { mm-qcamerad netmgrd qmuxd rmt_storage } system_file:file { rx_file_perms execmod };
+allow mm-qcamerad mm-qcamerad_exec:file r_file_perms;
+allow netmgrd netmgrd_exec:file r_file_perms;
+allow qmuxd qmuxd_exec:file r_file_perms;
+allow rmt_storage rmt_storage_exec:file r_file_perms;
+
+# Legacy camera IPC uses cam_socket0 directly under /data.
+type_transition mm-qcamerad system_data_file:sock_file camera_socket "cam_socket0";
+allow mm-qcamerad system_data_file:dir { write add_name remove_name };
+allow mm-qcamerad camera_socket:sock_file create_file_perms;
+allow mm-qcamerad video_device:dir r_dir_perms;
+allow { cameraserver mediaserver } camera_socket:sock_file rw_file_perms;
+allow { cameraserver mediaserver } mm-qcamerad:unix_stream_socket connectto;
+allow { cameraserver mediaserver } video_device:chr_file rw_file_perms;
+allow { cameraserver mediaserver audioserver rild system_server } system_file:file execmod;
+allow audioserver self:capability sys_nice;
+
+# Legacy modem storage and ONCRPC, scoped to their actual device labels.
+allow rmt_storage lge_rmt_storage_device:chr_file rw_file_perms;
+allow rmt_storage self:capability dac_override;
+allow netmgrd self:capability dac_override;
+allow netmgrd self:packet_socket create_socket_perms;
+allow system_server lge_oncrpc_device:dir search;
+allow system_server lge_oncrpc_device:chr_file rw_file_perms;
+allow qti_init_shell lge_modem_device:blk_file r_file_perms;
+allow qti_init_shell init:fifo_file { getattr write };
+allow init block_device:blk_file setattr;
+
+type lge_sensord, domain;
+type lge_sensord_exec, exec_type, file_type;
+init_daemon_domain(lge_sensord)
+allow lge_sensord lge_sensord_exec:file r_file_perms;
+allow lge_sensord shell_exec:file { rx_file_perms entrypoint };
+allow lge_sensord system_file:file { rx_file_perms execmod };
+allow lge_sensord self:capability dac_override;
+r_dir_file(lge_sensord, sysfs)
+allow lge_sensord sysfs_lge_sensors:lnk_file r_file_perms;
+allow lge_sensord input_device:dir search;
+allow lge_sensord input_device:chr_file rw_file_perms;
+allow lge_sensord sysfs_lge_sensors:dir r_dir_perms;
+allow lge_sensord sysfs_lge_sensors:file rw_file_perms;
+allow lge_sensord sysfs:dir search;
+allow lge_sensord system_data_file:dir { search write add_name remove_name };
+allow lge_sensord lge_sensors_data_file:dir create_dir_perms;
+allow lge_sensord lge_sensors_data_file:{ file fifo_file } create_file_perms;
+type_transition lge_sensord system_data_file:fifo_file lge_sensors_data_file "fifo_cmd";
+type_transition lge_sensord system_data_file:file lge_sensors_data_file "sensord.err";
+allow system_server lge_sensors_data_file:dir r_dir_perms;
+allow system_server lge_sensors_data_file:fifo_file rw_file_perms;
+allow system_server { sysfs_lge_sensors sysfs_lge_vibrator sysfs_lge_kcal }:file rw_file_perms;

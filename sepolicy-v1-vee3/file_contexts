@@ -1,0 +1,26 @@
+# Override the broad Qualcomm /dev/msm_.* audio label for camera nodes.
+/dev/msm_camera(/.*)?                  u:object_r:video_device:s0
+/dev/video[0-9]+                       u:object_r:video_device:s0
+/dev/oncrpc(/.*)?                      u:object_r:lge_oncrpc_device:s0
+/dev/rmt_storage                      u:object_r:lge_rmt_storage_device:s0
+
+# Partition mapping confirmed by the supplied V1/Vee3 boot logs.
+/dev/block/mmcblk0                     u:object_r:root_block_device:s0
+/dev/block/mmcblk0p7                   u:object_r:modem_efs_partition_device:s0
+/dev/block/mmcblk0p12                  u:object_r:lge_modem_device:s0
+/dev/block/mmcblk0p14                  u:object_r:system_block_device:s0
+/dev/block/mmcblk0p16                  u:object_r:cache_block_device:s0
+/dev/block/mmcblk0p20                  u:object_r:userdata_block_device:s0
+
+/data/cam_socket[0-9]+                 u:object_r:camera_socket:s0
+/data/misc/sensor(/.*)?                u:object_r:lge_sensors_data_file:s0
+/data/fifo_cmd                        u:object_r:lge_sensors_data_file:s0
+/data/sensord\.err                    u:object_r:lge_sensors_data_file:s0
+/mpt/prox_calibration\.dat            u:object_r:lge_sensors_data_file:s0
+
+# Dedicated entrypoints establish domains before the legacy ELF is loaded.
+/system/bin/lge-start-mm-qcamera-daemon u:object_r:mm-qcamerad_exec:s0
+/system/bin/lge-start-netmgrd           u:object_r:netmgrd_exec:s0
+/system/bin/lge-start-qmuxd             u:object_r:qmuxd_exec:s0
+/system/bin/lge-start-rmt_storage       u:object_r:rmt_storage_exec:s0
+/system/bin/lge-start-sensord           u:object_r:lge_sensord_exec:s0

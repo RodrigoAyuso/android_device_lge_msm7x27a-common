@@ -103,7 +103,10 @@ BOARD_HARDWARE_CLASS := device/lge/msm7x27a-common/cmhw
 
 # SEPolicy
 include device/qcom/sepolicy/sepolicy.mk
-#BOARD_SEPOLICY_DIRS += device/lge/msm7x27a-common/sepolicy
+# Keep the old policy directory disabled; use the Android 7.1 policy for these boards.
+ifneq ($(filter v1 vee3,$(TARGET_DEVICE)),)
+BOARD_SEPOLICY_DIRS += device/lge/msm7x27a-common/sepolicy-v1-vee3
+endif
 
 # WLAN
 BOARD_HAS_QCOM_WLAN              := true

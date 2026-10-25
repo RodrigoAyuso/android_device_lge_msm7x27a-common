@@ -20,9 +20,9 @@ $(call inherit-product, vendor/lge/msm7x27a-common/msm7x27a-common-vendor.mk)
 DEVICE_PACKAGE_OVERLAYS += device/lge/msm7x27a-common/overlay
 
 # Common ramdisk
+PRODUCT_PACKAGES += init.lge.shared.rc
 PRODUCT_COPY_FILES += \
     device/lge/msm7x27a-common/rootdir/root/fstab.lge.shared:root/fstab.lge.shared \
-    device/lge/msm7x27a-common/rootdir/root/init.lge.shared.rc:root/init.lge.shared.rc \
     device/lge/msm7x27a-common/rootdir/root/init.lge.usb.rc:root/init.lge.usb.rc
 
 # Common audio policy and media codecs
