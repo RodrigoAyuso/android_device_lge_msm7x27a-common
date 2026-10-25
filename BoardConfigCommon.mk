@@ -129,14 +129,6 @@ USE_MINIKIN := true
 # jemalloc for low-ram targets
 MALLOC_SVELTE := true
 
-# Build the ART boot image on the host and retain DEX files for fallback.
-ifeq ($(HOST_OS),linux)
-WITH_DEXPREOPT := true
-WITH_DEXPREOPT_PIC := true
-WITH_DEXPREOPT_BOOT_IMG_ONLY := true
-DEX_PREOPT_DEFAULT := nostripping
-endif
-
 # Include an expanded selection of fonts
 EXTENDED_FONT_FOOTPRINT := true
 
