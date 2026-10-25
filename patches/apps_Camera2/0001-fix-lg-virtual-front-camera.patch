@@ -1,0 +1,210 @@
+Subject: [PATCH] Camera2: correct LG virtual front preview and mirror saved photos
+
+diff --git a/packages/apps/Camera2/src/com/android/camera/PhotoModule.java b/packages/apps/Camera2/src/com/android/camera/PhotoModule.java
+--- a/packages/apps/Camera2/src/com/android/camera/PhotoModule.java
++++ b/packages/apps/Camera2/src/com/android/camera/PhotoModule.java
+@@ -905,7 +905,10 @@
+ 
+             final ExifInterface exif = Exif.getExif(originalJpegData);
+             final NamedEntity name = mNamedImages.getNextNameEntity();
+-            if (mShouldResizeTo16x9) {
++            final boolean mirrorPhoto = VirtualFrontCamera.isAlias(camera.getCameraId());
++            final boolean cropPhoto = mShouldResizeTo16x9;
++            final int mirrorQuality = mCameraSettings.getPhotoJpegCompressionQuality();
++            if (cropPhoto || mirrorPhoto) {
+                 final ResizeBundle dataBundle = new ResizeBundle();
+                 dataBundle.jpegData = originalJpegData;
+                 dataBundle.targetAspectRatio = ResolutionUtil.NEXUS_5_LARGE_16_BY_9_ASPECT_RATIO;
+@@ -914,7 +917,13 @@
+ 
+                     @Override
+                     protected ResizeBundle doInBackground(ResizeBundle... resizeBundles) {
+-                        return cropJpegDataToAspectRatio(resizeBundles[0]);
++                        ResizeBundle result = cropPhoto
++                                ? cropJpegDataToAspectRatio(resizeBundles[0]) : resizeBundles[0];
++                        if (mirrorPhoto) {
++                            result.jpegData = VirtualFrontCamera.mirrorJpeg(
++                                    result.jpegData, result.exif, mirrorQuality);
++                        }
++                        return result;
+                     }
+ 
+                     @Override
+@@ -1722,14 +1731,16 @@
+         mDisplayRotation = CameraUtil.getDisplayRotation();
+         Characteristics info =
+                 mActivity.getCameraProvider().getCharacteristics(mCameraId);
+-        mDisplayOrientation = info.getPreviewOrientation(mDisplayRotation);
++        int previewRotation = VirtualFrontCamera.getDisplayRotation(
++                mCameraId, mDisplayRotation);
++        mDisplayOrientation = info.getPreviewOrientation(previewRotation);
+         mUI.setDisplayOrientation(mDisplayOrientation);
+         if (mFocusManager != null) {
+             mFocusManager.setDisplayOrientation(mDisplayOrientation);
+         }
+         // Change the camera display orientation
+         if (mCameraDevice != null) {
+-            mCameraDevice.setDisplayOrientation(mDisplayRotation);
++            mCameraDevice.setDisplayOrientation(previewRotation);
+         }
+         Log.v(TAG, "setDisplayOrientation (screen:preview) " +
+                 mDisplayRotation + ":" + mDisplayOrientation);
+diff --git a/packages/apps/Camera2/src/com/android/camera/VideoModule.java b/packages/apps/Camera2/src/com/android/camera/VideoModule.java
+--- a/packages/apps/Camera2/src/com/android/camera/VideoModule.java
++++ b/packages/apps/Camera2/src/com/android/camera/VideoModule.java
+@@ -867,10 +867,12 @@
+         mDisplayRotation = CameraUtil.getDisplayRotation();
+         Characteristics info =
+                 mActivity.getCameraProvider().getCharacteristics(mCameraId);
+-        mCameraDisplayOrientation = info.getPreviewOrientation(mDisplayRotation);
++        int previewRotation = VirtualFrontCamera.getDisplayRotation(
++                mCameraId, mDisplayRotation);
++        mCameraDisplayOrientation = info.getPreviewOrientation(previewRotation);
+         // Change the camera display orientation
+         if (mCameraDevice != null) {
+-            mCameraDevice.setDisplayOrientation(mDisplayRotation);
++            mCameraDevice.setDisplayOrientation(previewRotation);
+         }
+         if (mFocusManager != null) {
+             mFocusManager.setDisplayOrientation(mCameraDisplayOrientation);
+@@ -928,7 +930,6 @@
+         }
+ 
+         setDisplayOrientation();
+-        mCameraDevice.setDisplayOrientation(mDisplayRotation);
+         setCameraParameters();
+ 
+         if (mFocusManager != null) {
+diff --git a/packages/apps/Camera2/src/com/android/camera/VirtualFrontCamera.java b/packages/apps/Camera2/src/com/android/camera/VirtualFrontCamera.java
+new file mode 100644
+--- /dev/null
++++ b/packages/apps/Camera2/src/com/android/camera/VirtualFrontCamera.java
+@@ -0,0 +1,128 @@
++/* SPDX-License-Identifier: Apache-2.0 */
++package com.android.camera;
++
++import android.graphics.Bitmap;
++import android.graphics.BitmapFactory;
++import android.hardware.Camera;
++import android.os.Build;
++import android.util.Log;
++import com.android.camera.exif.ExifInterface;
++import java.io.ByteArrayOutputStream;
++import java.io.IOException;
++
++/** Camera2-only handling of the rear-sensor alias on LG V1 and Vee3. */
++final class VirtualFrontCamera {
++    private static final String TAG = "VirtualFrontCamera";
++
++    private VirtualFrontCamera() { }
++
++    static boolean isAlias(int cameraId) {
++        if (cameraId != 1 || !("v1".equals(Build.HARDWARE)
++                || "vee3".equals(Build.HARDWARE))) {
++            return false;
++        }
++        try {
++            if (Camera.getNumberOfCameras() != 2) {
++                return false;
++            }
++            Camera.CameraInfo back = new Camera.CameraInfo();
++            Camera.CameraInfo front = new Camera.CameraInfo();
++            Camera.getCameraInfo(0, back);
++            Camera.getCameraInfo(1, front);
++            return back.facing == Camera.CameraInfo.CAMERA_FACING_BACK
++                    && front.facing == Camera.CameraInfo.CAMERA_FACING_FRONT
++                    && front.orientation == back.orientation;
++        } catch (RuntimeException error) {
++            Log.e(TAG, "Cannot inspect virtual camera metadata", error);
++            return false;
++        }
++    }
++
++    static int getDisplayRotation(int cameraId, int displayRotation) {
++        if (!isAlias(cameraId)) {
++            return displayRotation;
++        }
++        Camera.CameraInfo back = new Camera.CameraInfo();
++        Camera.getCameraInfo(0, back);
++        // The alias uses rear pixels. Cancel the front-camera rotation
++        // convention while retaining CameraClient's horizontal reflection.
++        return (displayRotation + 720 - 2 * back.orientation) % 360;
++    }
++
++    static byte[] mirrorJpeg(byte[] jpeg, ExifInterface exif, int quality) {
++        Bitmap bitmap = null;
++        Bitmap thumbnail = null;
++        byte[] originalThumbnail = exif.getThumbnail();
++        try {
++            BitmapFactory.Options options = new BitmapFactory.Options();
++            options.inMutable = true;
++            options.inPreferredConfig = Bitmap.Config.ARGB_8888;
++            bitmap = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.length, options);
++            if (bitmap == null) {
++                throw new IOException("Cannot decode captured JPEG");
++            }
++            int rotation = Exif.getOrientation(exif);
++            boolean vertical = rotation == 90 || rotation == 270;
++            mirrorPixels(bitmap, vertical);
++            // Keep the embedded thumbnail consistent with the main image.
++            byte[] mirroredThumbnail = null;
++            if (originalThumbnail != null) {
++                thumbnail = BitmapFactory.decodeByteArray(originalThumbnail, 0,
++                        originalThumbnail.length, options);
++                if (thumbnail == null) {
++                    throw new IOException("Cannot decode embedded thumbnail");
++                }
++                mirrorPixels(thumbnail, vertical);
++                ByteArrayOutputStream thumbOutput = new ByteArrayOutputStream();
++                if (!thumbnail.compress(Bitmap.CompressFormat.JPEG, quality, thumbOutput)) {
++                    throw new IOException("Cannot encode mirrored thumbnail");
++                }
++                mirroredThumbnail = thumbOutput.toByteArray();
++            }
++            ByteArrayOutputStream output = new ByteArrayOutputStream();
++            if (!bitmap.compress(Bitmap.CompressFormat.JPEG, quality, output)) {
++                throw new IOException("Cannot encode mirrored JPEG");
++            }
++            if (mirroredThumbnail != null) {
++                exif.setCompressedThumbnail(mirroredThumbnail);
++            }
++            ByteArrayOutputStream withExif = new ByteArrayOutputStream();
++            exif.writeExif(output.toByteArray(), withExif);
++            return withExif.toByteArray();
++        } catch (IOException | RuntimeException | OutOfMemoryError error) {
++            if (originalThumbnail != null) exif.setCompressedThumbnail(originalThumbnail);
++            Log.e(TAG, "Mirroring failed; retaining the original capture", error);
++            return jpeg;
++        } finally {
++            if (thumbnail != null) thumbnail.recycle();
++            if (bitmap != null) bitmap.recycle();
++        }
++    }
++
++    private static void mirrorPixels(Bitmap bitmap, boolean vertical) {
++        int width = bitmap.getWidth();
++        int height = bitmap.getHeight();
++        int[] first = new int[width];
++        if (vertical) {
++            int[] second = new int[width];
++            for (int y = 0; y < height / 2; y++) {
++                int opposite = height - 1 - y;
++                bitmap.getPixels(first, 0, width, 0, y, width, 1);
++                bitmap.getPixels(second, 0, width, 0, opposite, width, 1);
++                bitmap.setPixels(second, 0, width, 0, y, width, 1);
++                bitmap.setPixels(first, 0, width, 0, opposite, width, 1);
++            }
++        } else {
++            for (int y = 0; y < height; y++) {
++                bitmap.getPixels(first, 0, width, 0, y, width, 1);
++                for (int x = 0; x < width / 2; x++) {
++                    int opposite = width - 1 - x;
++                    int pixel = first[x];
++                    first[x] = first[opposite];
++                    first[opposite] = pixel;
++                }
++                bitmap.setPixels(first, 0, width, 0, y, width, 1);
++            }
++        }
++    }
++}
