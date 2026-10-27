@@ -53,3 +53,9 @@ type_transition lge_sensord system_data_file:file lge_sensors_data_file "sensord
 allow system_server lge_sensors_data_file:dir r_dir_perms;
 allow system_server lge_sensors_data_file:fifo_file rw_file_perms;
 allow system_server { sysfs_lge_sensors sysfs_lge_vibrator sysfs_lge_kcal }:file rw_file_perms;
+
+# Traverse the separately labeled vibrator directory.
+allow system_server sysfs_lge_vibrator:dir search;
+
+# The legacy GLES driver reads this clock node when rendering applications.
+allow appdomain sysfs_lge_gpu_clock:file r_file_perms;

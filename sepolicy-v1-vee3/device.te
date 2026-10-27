@@ -6,3 +6,4 @@ type lge_sensors_data_file, file_type, data_file_type;
 type sysfs_lge_sensors, fs_type, sysfs_type;
 type sysfs_lge_vibrator, fs_type, sysfs_type;
 type sysfs_lge_kcal, fs_type, sysfs_type;
+type sysfs_lge_gpu_clock, fs_type, sysfs_type;

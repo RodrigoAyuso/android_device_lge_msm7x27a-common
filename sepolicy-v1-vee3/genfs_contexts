@@ -2,3 +2,4 @@ genfscon sysfs /devices/virtual/timed_output/vibrator u:object_r:sysfs_lge_vibra
 genfscon sysfs /module/lge_emmc_direct_access/parameters/lcd_k_cal u:object_r:sysfs_lge_kcal:s0
 genfscon sysfs /devices/platform/msm_fb.131073/mdp_kcal u:object_r:sysfs_lge_kcal:s0
 genfscon sysfs /devices/platform/i2c-gpio.5/i2c-5/5-0039 u:object_r:sysfs_lge_sensors:s0
+genfscon sysfs /devices/platform/kgsl-3d0.0/kgsl/kgsl-3d0/gpuclk u:object_r:sysfs_lge_gpu_clock:s0
