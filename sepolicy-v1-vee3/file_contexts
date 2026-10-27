@@ -24,3 +24,6 @@
 /system/bin/lge-start-qmuxd             u:object_r:qmuxd_exec:s0
 /system/bin/lge-start-rmt_storage       u:object_r:rmt_storage_exec:s0
 /system/bin/lge-start-sensord           u:object_r:lge_sensord_exec:s0
+
+# Keep legacy ELF copies under system_file for text relocations.
+/system/bin/lge-legacy(/.*)?          u:object_r:system_file:s0
