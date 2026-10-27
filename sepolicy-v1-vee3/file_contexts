@@ -27,3 +27,6 @@
 
 # Keep legacy ELF copies under system_file for text relocations.
 /system/bin/lge-legacy(/.*)?          u:object_r:system_file:s0
+
+# The hardware JPEG DSP node is separate from generic device nodes.
+/dev/adsp/JPEGTASK                      u:object_r:lge_jpeg_device:s0

@@ -1,0 +1,3 @@
+# The legacy JPEG encoder uses this endpoint in the media/camera service.
+type lge_jpeg_device, dev_type;
+allow { mediaserver cameraserver } lge_jpeg_device:chr_file rw_file_perms;
