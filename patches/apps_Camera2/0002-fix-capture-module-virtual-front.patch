@@ -1,0 +1,166 @@
+Subject: [PATCH] Camera2: fix LG virtual front capture preview and saved photos
+
+diff --git a/packages/apps/Camera2/src/com/android/camera/CaptureModule.java b/packages/apps/Camera2/src/com/android/camera/CaptureModule.java
+--- a/packages/apps/Camera2/src/com/android/camera/CaptureModule.java
++++ b/packages/apps/Camera2/src/com/android/camera/CaptureModule.java
+@@ -534,6 +534,9 @@
+         }
+ 
+         CaptureSession session = createAndStartCaptureSession();
++        if (isLgVirtualFrontCamera()) {
++            session = new VirtualFrontCaptureSession(session);
++        }
+         int orientation = mAppController.getOrientationManager().getDeviceOrientation()
+                 .getDegrees();
+ 
+@@ -893,6 +896,10 @@
+     // Currently AF state transitions are controlled in OneCameraImpl.
+     // PhotoModule uses FocusOverlayManager which uses API1/portability
+     // logic and coordinates.
++    private boolean isLgVirtualFrontCamera() {
++        return mCameraFacing == Facing.FRONT && VirtualFrontCamera.isAlias(1);
++    }
++
+     private void startActiveFocusAt(int viewX, int viewY) {
+         if (mCamera == null) {
+             // If we receive this after the camera is closed, do nothing.
+@@ -910,6 +917,12 @@
+         float points[] = new float[2];
+         points[0] = (viewX - mPreviewArea.left) / mPreviewArea.width();
+         points[1] = (viewY - mPreviewArea.top) / mPreviewArea.height();
++
++        // Undo the additional preview rotation before converting tap coordinates.
++        if (isLgVirtualFrontCamera()) {
++            points[0] = 1.0f - points[0];
++            points[1] = 1.0f - points[1];
++        }
+ 
+         // Rotate coordinates to portrait orientation per CameraOne API.
+         Matrix rotationMatrix = new Matrix();
+@@ -1257,6 +1270,11 @@
+                 Matrix transformMatrix = mPreviewTransformCalculator.toTransformMatrix(
+                         new Size(mScreenWidth, mScreenHeight),
+                         new Size(mPreviewBufferWidth, mPreviewBufferHeight));
++                if (isLgVirtualFrontCamera()) {
++                    transformMatrix.postRotate(180.0f,
++                            mScreenWidth / 2.0f, mScreenHeight / 2.0f);
++                    Log.i(TAG, "LG virtual front: rotate preview by 180 degrees");
++                }
+                 mAppController.updatePreviewTransform(transformMatrix);
+             }
+         }
+diff --git a/packages/apps/Camera2/src/com/android/camera/VirtualFrontCaptureSession.java b/packages/apps/Camera2/src/com/android/camera/VirtualFrontCaptureSession.java
+new file mode 100644
+--- /dev/null
++++ b/packages/apps/Camera2/src/com/android/camera/VirtualFrontCaptureSession.java
+@@ -0,0 +1,110 @@
++/* SPDX-License-Identifier: Apache-2.0 */
++package com.android.camera;
++
++import android.graphics.Bitmap;
++import android.graphics.Matrix;
++import android.location.Location;
++import android.media.CameraProfile;
++import android.net.Uri;
++import android.util.Log;
++import com.android.camera.exif.ExifInterface;
++import com.android.camera.session.CaptureSession;
++import com.android.camera.session.StackSaver;
++import com.android.camera.session.TemporarySessionFile;
++import com.android.camera.stats.CaptureSessionStatsCollector;
++import com.android.camera.util.Size;
++import com.google.common.base.Optional;
++import com.google.common.util.concurrent.ListenableFuture;
++
++/** Mirrors only a virtual-front still capture, preserving the session lifecycle. */
++final class VirtualFrontCaptureSession implements CaptureSession {
++    private static final String TAG = "LgeFrontCapture";
++    private final CaptureSession mDelegate;
++
++    VirtualFrontCaptureSession(CaptureSession delegate) {
++        mDelegate = delegate;
++    }
++
++    @Override
++    public ListenableFuture<Optional<Uri>> saveAndFinish(byte[] data, int width, int height,
++            int orientation, ExifInterface exif) {
++        // The JPEG backend invokes this on its existing image-processing worker.
++        ExifInterface metadata = exif != null ? exif : Exif.getExif(data);
++        // Match the JPEG backend's high-quality profile when reflecting pixels.
++        int quality = CameraProfile.getJpegEncodingQualityParameter(CameraProfile.QUALITY_HIGH);
++        byte[] mirrored = VirtualFrontCamera.mirrorJpeg(data, metadata, quality);
++        if (mirrored != data) {
++            Log.i(TAG, "Mirrored virtual-front JPEG " + width + "x" + height);
++        } else {
++            Log.w(TAG, "JPEG mirror failed; original capture retained");
++        }
++        return mDelegate.saveAndFinish(mirrored, width, height, orientation, metadata);
++    }
++
++    private static Bitmap mirrorThumbnail(Bitmap bitmap, int rotationDegrees) {
++        if (bitmap == null) return null;
++        try {
++            Matrix transform = new Matrix();
++            boolean vertical = rotationDegrees == 90 || rotationDegrees == 270;
++            transform.setScale(vertical ? 1.0f : -1.0f, vertical ? -1.0f : 1.0f);
++            return Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(),
++                    transform, false);
++        } catch (RuntimeException | OutOfMemoryError error) {
++            Log.w(TAG, "Thumbnail mirror failed; retaining the original", error);
++            return bitmap;
++        }
++    }
++
++    @Override public void updateThumbnail(Bitmap bitmap) {
++        mDelegate.updateThumbnail(mirrorThumbnail(bitmap, 0));
++    }
++    @Override public void updateCaptureIndicatorThumbnail(Bitmap bitmap, int rotationDegrees) {
++        mDelegate.updateCaptureIndicatorThumbnail(mirrorThumbnail(bitmap, rotationDegrees),
++                rotationDegrees);
++    }
++    @Override public String getTitle() { return mDelegate.getTitle(); }
++    @Override public Location getLocation() { return mDelegate.getLocation(); }
++    @Override public void setLocation(Location location) { mDelegate.setLocation(location); }
++    @Override public void setProgress(int percent) { mDelegate.setProgress(percent); }
++    @Override public int getProgress() { return mDelegate.getProgress(); }
++    @Override public int getProgressMessageId() { return mDelegate.getProgressMessageId(); }
++    @Override public void setProgressMessage(int messageId) {
++        mDelegate.setProgressMessage(messageId);
++    }
++    @Override public void startEmpty(ImageLifecycleListener listener, Size pictureSize) {
++        mDelegate.startEmpty(listener, pictureSize);
++    }
++    @Override public void startSession(ImageLifecycleListener listener, byte[] placeholder,
++            int progressMessageId) {
++        mDelegate.startSession(listener, placeholder, progressMessageId);
++    }
++    @Override public void startSession(ImageLifecycleListener listener, Bitmap placeholder,
++            int progressMessageId) {
++        mDelegate.startSession(listener, placeholder, progressMessageId);
++    }
++    @Override public void startSession(ImageLifecycleListener listener, Uri uri,
++            int progressMessageId) {
++        mDelegate.startSession(listener, uri, progressMessageId);
++    }
++    @Override public void cancel() { mDelegate.cancel(); }
++    @Override public StackSaver getStackSaver() { return mDelegate.getStackSaver(); }
++    @Override public void finish() { mDelegate.finish(); }
++    @Override public void finishWithFailure(int messageId, boolean removeFromFilmstrip) {
++        mDelegate.finishWithFailure(messageId, removeFromFilmstrip);
++    }
++    @Override public void finalizeSession() { mDelegate.finalizeSession(); }
++    @Override public TemporarySessionFile getTempOutputFile() {
++        return mDelegate.getTempOutputFile();
++    }
++    @Override public Uri getUri() { return mDelegate.getUri(); }
++    @Override public void updatePreview() { mDelegate.updatePreview(); }
++    @Override public void addProgressListener(ProgressListener listener) {
++        mDelegate.addProgressListener(listener);
++    }
++    @Override public void removeProgressListener(ProgressListener listener) {
++        mDelegate.removeProgressListener(listener);
++    }
++    @Override public CaptureSessionStatsCollector getCollector() {
++        return mDelegate.getCollector();
++    }
++}

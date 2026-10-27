@@ -1,32 +1,40 @@
-# Optional LG virtual-front behavior in Camera2
+# LG virtual-front behavior in Camera2
 
-This patch belongs to the Camera2 app, not to the camera HAL. It is carried
-inside the LG common tree and only changes app source when explicitly applied:
+These optional app patches are carried in the common device tree. Apply them
+explicitly after syncing packages/apps/Camera2:
 
 ```sh
-python3 device/lge/msm7x27a-common/patches/apply-camera2-patch.py --root "$PWD" --check
-python3 device/lge/msm7x27a-common/patches/apply-camera2-patch.py --root "$PWD"
+python3 device/lge/msm7x27a-common/patches/apply-userspace-patches.py --root "$PWD" --component camera2 --check
+python3 device/lge/msm7x27a-common/patches/apply-userspace-patches.py --root "$PWD" --component camera2
 ```
 
-The helper changes working files in packages/apps/Camera2. It does not create
-an app commit, stage changes, or run automatically from envsetup. The original
-restriction on LOS-source changes remains respected unless this explicit
-application is chosen. The common-tree commit only stores the patch.
+The helper modifies working files only. It does not stage files, create app
+commits or run from envsetup. The old apply-camera2-patch.py command forwards
+to the same implementation. An existing first app patch is recognized and
+only the missing second patch is applied.
 
-The patch recognizes the rear-sensor alias on ro.hardware=v1/vee3, logical ID 1,
-only when both exposed camera records share the same mount angle and report
-rear/front facing respectively. The rear camera and OpenCamera are unchanged.
+The alias gate requires ro.hardware=v1/vee3, two cameras, rear ID 0, front
+ID 1 and equal sensor mount angles. Other devices, the rear camera, the HAL
+and OpenCamera retain their previous behavior.
 
-The legacy photo and video modules correct the alias's preview rotation while
-retaining front-facing preview reflection. Saved JPEG photos are reflected in
-display coordinates, including their embedded JPEG thumbnail. EXIF/GPS and
-the selected JPEG compression quality are retained. This requires JPEG
-decoding and recompression; it is performed in the background using one full
-mutable bitmap and row buffers, rather than two full-size bitmaps.
+Patch 1 handles the legacy PhotoModule and VideoModule previews and mirrors
+PhotoModule JPEGs. Patch 2 covers the CaptureModule path used by the supplied
+runtime logs: rotate its preview by 180 degrees, map tap focus through that
+rotation, and wrap only a virtual-front photo's CaptureSession. Both the
+legacy OneCamera implementation and the image-backend implementation save
+through that session's saveAndFinish method.
 
-On decoding, allocation, or encoding failure, the original capture is retained
-and a VirtualFrontCamera error is logged. Video files retain their previous
-recording behavior; this patch changes their preview orientation only.
+The session wrapper reflects JPEG pixels in display coordinates, keeping
+dimensions, orientation, EXIF/GPS and embedded thumbnails. It also reflects
+the UI thumbnails and delegates the other session operations and the original
+completion future. Processing uses the existing JPEG worker, one mutable
+full-size bitmap and row buffers. It adds decode/re-encode work and another
+JPEG compression pass, using the backend's high-quality camera profile.
+On allocation/decode/encode failure the original photograph is retained and
+an error is logged. Video recording behavior is unchanged.
 
-After syncing the app repository, re-run the explicit helper before rebuilding.
-No complete Android app build or on-device camera test was performed here.
+Expected log tags: LgeFrontCapture for the final JPEG; CaptureModule for the
+preview correction; VirtualFrontCamera for a processing failure. Verify
+portrait, reverse portrait and both landscape orientations on the handset,
+including text in the saved image and tap focus. Full APK compilation and
+physical camera validation are still required in the Android build tree.
