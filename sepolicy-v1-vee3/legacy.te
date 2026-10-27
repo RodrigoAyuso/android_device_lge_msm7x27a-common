@@ -20,6 +20,9 @@ allow { cameraserver mediaserver } video_device:chr_file rw_file_perms;
 allow { cameraserver mediaserver audioserver rild system_server } system_file:file execmod;
 allow audioserver self:capability sys_nice;
 
+# The legacy Bluetooth initializer uses text relocations in libnv.so.
+allow bluetooth system_file:file execmod;
+
 # Legacy modem storage and ONCRPC, scoped to their actual device labels.
 allow rmt_storage lge_rmt_storage_device:chr_file rw_file_perms;
 allow rmt_storage self:capability dac_override;
@@ -27,6 +30,7 @@ allow netmgrd self:capability dac_override;
 allow netmgrd self:packet_socket create_socket_perms;
 allow system_server lge_oncrpc_device:dir search;
 allow system_server lge_oncrpc_device:chr_file rw_file_perms;
+allow system_server sysfs_lge_sensors:dir search;
 allow qti_init_shell lge_modem_device:blk_file r_file_perms;
 allow qti_init_shell init:fifo_file { getattr write };
 allow init block_device:blk_file setattr;
