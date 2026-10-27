@@ -1,0 +1,17 @@
+Subject: [PATCH] Bluetooth: allow LG V1 and Vee3 more time to start profiles
+
+diff --git a/packages/apps/Bluetooth/src/com/android/bluetooth/btservice/AdapterState.java b/packages/apps/Bluetooth/src/com/android/bluetooth/btservice/AdapterState.java
+--- a/packages/apps/Bluetooth/src/com/android/bluetooth/btservice/AdapterState.java
++++ b/packages/apps/Bluetooth/src/com/android/bluetooth/btservice/AdapterState.java
+@@ -73,7 +73,10 @@
+     //TODO: tune me
+     private static final int ENABLE_TIMEOUT_DELAY = 12000;
+     private static final int DISABLE_TIMEOUT_DELAY = 8000;
+-    private static final int BREDR_START_TIMEOUT_DELAY = 4000;
++    // Cold profile startup can exceed four seconds on these single-core boards.
++    private static final int BREDR_START_TIMEOUT_DELAY =
++            ("v1".equals(android.os.Build.HARDWARE)
++                    || "vee3".equals(android.os.Build.HARDWARE)) ? 15000 : 4000;
+     //BLE_START_TIMEOUT can happen quickly as it just a start gattservice
+     private static final int BLE_START_TIMEOUT_DELAY = 2000; //To start GattService
+     private static final int BLE_STOP_TIMEOUT_DELAY = 2000;
