@@ -1,7 +1,20 @@
-#!/usr/bin/env python3
-"""Apply only the Camera2 patches; the shared helper preserves index and history."""
-from pathlib import Path
+#!/usr/bin/env python
+"""Compatibility entry point for the Bash Camera2 preparation helper."""
+from __future__ import print_function
+import os
 import subprocess
 import sys
-helper = Path(__file__).resolve().with_name('apply-userspace-patches.py')
-sys.exit(subprocess.call([sys.executable, str(helper), *sys.argv[1:], '--component', 'camera2']))
+
+
+def main():
+    helper = os.path.join(os.path.dirname(os.path.realpath(__file__)),
+                          'apply-camera2-patches.sh')
+    try:
+        return subprocess.call(['bash', helper] + sys.argv[1:])
+    except OSError as error:
+        sys.stderr.write('Unable to start the Camera2 shell helper: ' + str(error) + '\n')
+        return 1
+
+
+if __name__ == '__main__':
+    sys.exit(main())

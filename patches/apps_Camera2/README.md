@@ -1,40 +1,59 @@
-# LG virtual-front behavior in Camera2
+# Camera2 patches prepared with ART and Bluetooth
 
-These optional app patches are carried in the common device tree. Apply them
-explicitly after syncing packages/apps/Camera2:
+The common DT carries all three Camera2 application patches. They are prepared
+through the same explicit Bash/Git workflow as the ART and Bluetooth patches:
 
-```sh
-python3 device/lge/msm7x27a-common/patches/apply-userspace-patches.py --root "$PWD" --component camera2 --check
-python3 device/lge/msm7x27a-common/patches/apply-userspace-patches.py --root "$PWD" --component camera2
-```
+~~~sh
+source build/envsetup.sh
+msm7x27a_apply_patches --check
+msm7x27a_brunch vee3
+~~~
 
-The helper modifies working files only. It does not stage files, create app
-commits or run from envsetup. The old apply-camera2-patch.py command forwards
-to the same implementation. An existing first app patch is recognized and
-only the missing second patch is applied.
+Use v1 for V1. The brunch wrapper runs apply-patches.sh before calling the normal
+brunch function. A failed source preflight stops before brunch is entered.
+The coordinator preflights ART, Bluetooth and the available Camera2 project
+before changing their working sources.
 
-The alias gate requires ro.hardware=v1/vee3, two cameras, rear ID 0, front
-ID 1 and equal sensor mount angles. Other devices, the rear camera, the HAL
-and OpenCamera retain their previous behavior.
+There is no Camera2 execution from BoardConfigCommon.mk or product discovery.
+The obsolete camera2.mk hook is removed. Preparation uses Bash, Git, awk, standard
+Linux file tools and flock; it does not invoke Python. The LOS 14.1 Python 2
+environment is unchanged.
 
-Patch 1 handles the legacy PhotoModule and VideoModule previews and mirrors
-PhotoModule JPEGs. Patch 2 covers the CaptureModule path used by the supplied
-runtime logs: rotate its preview by 180 degrees, map tap focus through that
-rotation, and wrap only a virtual-front photo's CaptureSession. Both the
-legacy OneCamera implementation and the image-backend implementation save
-through that session's saveAndFinish method.
+The old apply-camera2-patch.py and apply-userspace-patches.py entry points remain
+as Python 2.7/3-compatible wrappers around the shell helper. They do not import
+pathlib or use subprocess.run/capture_output/text. Existing --root, --check and
+--component camera2/all calls are accepted.
 
-The session wrapper reflects JPEG pixels in display coordinates, keeping
-dimensions, orientation, EXIF/GPS and embedded thumbnails. It also reflects
-the UI thumbnails and delegates the other session operations and the original
-completion future. Processing uses the existing JPEG worker, one mutable
-full-size bitmap and row buffers. It adds decode/re-encode work and another
-JPEG compression pass, using the backend's high-quality camera profile.
-On allocation/decode/encode failure the original photograph is retained and
-an error is logged. Video recording behavior is unchanged.
+For Camera2-only preparation from the source root:
 
-Expected log tags: LgeFrontCapture for the final JPEG; CaptureModule for the
-preview correction; VirtualFrontCamera for a processing failure. Verify
-portrait, reverse portrait and both landscape orientations on the handset,
-including text in the saved image and tap focus. Full APK compilation and
-physical camera validation are still required in the Android build tree.
+~~~sh
+bash device/lge/msm7x27a-common/patches/apply-camera2-patches.sh --check
+bash device/lge/msm7x27a-common/patches/apply-camera2-patches.sh
+~~~
+
+The helper preflights the complete app series in a temporary working directory,
+preserves the app index/history and unrelated edits, and handles matching helper
+classes left behind after a reset or removed by a source clean. A conflicting
+custom file is not overwritten. Repeated preparation recognizes applied patches.
+
+Camera2 remains optional if its project is absent. If selected for the ROM,
+keep the standard packages/apps/Camera2 cm-14.1 project in the manifest. The
+coordinator does not download missing source during a build.
+
+The photo and video application patches are unchanged from the preceding
+working photo/video package. The virtual-front video preview has its own
+TextureView rotation correction and same-profile refresh. The recorder uses
+the physical rear sensor's rotation convention. The saved video frames are
+not pixel-mirrored; the hardware recording path is retained. Photo JPEG
+reflection and its EXIF handling remain as before.
+
+After a full build:
+
+~~~sh
+python device/lge/msm7x27a-common/patches/verify-camera2.py --root "$PWD" --device vee3
+~~~
+
+The verifier supports Python 2.7 and 3 without extra modules. Add --phone after
+installing the new ROM/system image to compare APK/OAT hashes. File checks do
+not replace testing video preview, recording orientation, camera switching,
+tap focus and the already working photo behavior on the handset.

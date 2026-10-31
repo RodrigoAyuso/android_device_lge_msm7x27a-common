@@ -10,7 +10,7 @@ function msm7x27a_apply_patches() {
     bash "$top/device/lge/msm7x27a-common/apply-patches.sh" "$@"
 }
 
-# Apply the Bluetooth and ART patches before running brunch.
+# Apply the Bluetooth, ART and Camera2 patches before running brunch.
 function msm7x27a_brunch() {
     msm7x27a_apply_patches || return 1
     brunch "$@"

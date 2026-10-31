@@ -1,0 +1,97 @@
+From 26053b8ebc1621e98b5e61e90719a02a0fa9b572 Mon Sep 17 00:00:00 2001
+From: LG Device Maintenance <patches@example.invalid>
+Date: Sat, 31 Oct 2026 15:20:11 -0300
+Subject: [PATCH] Camera2: correct LG virtual front video preview and recording
+ orientation
+
+---
+ .../src/com/android/camera/TextureViewHelper.java   | 13 ++++++++++++-
+ .../Camera2/src/com/android/camera/VideoModule.java |  9 +++++++--
+ .../Camera2/src/com/android/camera/VideoUI.java     |  7 ++++++-
+ 3 files changed, 25 insertions(+), 4 deletions(-)
+
+diff --git a/packages/apps/Camera2/src/com/android/camera/TextureViewHelper.java b/packages/apps/Camera2/src/com/android/camera/TextureViewHelper.java
+index 2125280..d6b552a 100644
+--- a/packages/apps/Camera2/src/com/android/camera/TextureViewHelper.java
++++ b/packages/apps/Camera2/src/com/android/camera/TextureViewHelper.java
+@@ -72,6 +72,7 @@ public class TextureViewHelper implements TextureView.SurfaceTextureListener,
+     private final AppController mAppController;
+     private final int mCameraModeId;
+     private final int mCaptureIntentModeId;
++    private final int mVideoModeId;
+ 
+     public TextureViewHelper(TextureView preview, CaptureLayoutHelper helper,
+             CameraProvider cameraProvider, AppController appController) {
+@@ -85,6 +86,8 @@ public class TextureViewHelper implements TextureView.SurfaceTextureListener,
+                 .getInteger(R.integer.camera_mode_photo);
+         mCaptureIntentModeId = appController.getAndroidContext().getResources()
+                 .getInteger(R.integer.camera_mode_capture_intent);
++        mVideoModeId = appController.getAndroidContext().getResources()
++                .getInteger(R.integer.camera_mode_video);
+     }
+ 
+     /**
+@@ -362,8 +365,16 @@ public class TextureViewHelper implements TextureView.SurfaceTextureListener,
+         } else if (cameraId >= 0) {
+             // Otherwise, do the default, legacy action.
+             CameraDeviceInfo.Characteristics info = mCameraProvider.getCharacteristics(cameraId);
++            RectF previewRect = mCaptureLayoutHelper.getPreviewRect();
+             matrix = info.getPreviewTransform(mOrientation, new RectF(0, 0, mWidth, mHeight),
+-                    mCaptureLayoutHelper.getPreviewRect());
++                    previewRect);
++            // Video uses this automatic transform, unlike CaptureModule's photo matrix.
++            // The logical front camera is a rear-sensor alias on these LG devices.
++            if (mAppController.getCurrentModuleIndex() == mVideoModeId
++                    && VirtualFrontCamera.isAlias(cameraId)) {
++                matrix.postRotate(180.0f, previewRect.centerX(), previewRect.centerY());
++                Log.i(TAG, "LG virtual front: rotate video preview by 180 degrees");
++            }
+         } else {
+             // Do Nothing
+         }
+diff --git a/packages/apps/Camera2/src/com/android/camera/VideoModule.java b/packages/apps/Camera2/src/com/android/camera/VideoModule.java
+index 877c2bc..9437403 100644
+--- a/packages/apps/Camera2/src/com/android/camera/VideoModule.java
++++ b/packages/apps/Camera2/src/com/android/camera/VideoModule.java
+@@ -1178,8 +1178,13 @@ public class VideoModule extends CameraModule
+                 mActivity.getCameraProvider().getCharacteristics(mCameraId).getSensorOrientation();
+         int deviceOrientation =
+                 mAppController.getOrientationManager().getDeviceOrientation().getDegrees();
+-        int rotation = CameraUtil.getImageRotation(
+-                sensorOrientation, deviceOrientation, isCameraFrontFacing());
++        boolean virtualFront = VirtualFrontCamera.isAlias(mCameraId);
++        // MediaRecorder receives the physical rear stream, not the mirrored preview.
++        int rotation = CameraUtil.getImageRotation(sensorOrientation, deviceOrientation,
++                isCameraFrontFacing() && !virtualFront);
++        if (virtualFront) {
++            Log.i(TAG, "LG virtual front: use rear sensor video orientation");
++        }
+         mMediaRecorder.setOrientationHint(rotation);
+ 
+         try {
+diff --git a/packages/apps/Camera2/src/com/android/camera/VideoUI.java b/packages/apps/Camera2/src/com/android/camera/VideoUI.java
+index 9d00969..f02f4a6 100644
+--- a/packages/apps/Camera2/src/com/android/camera/VideoUI.java
++++ b/packages/apps/Camera2/src/com/android/camera/VideoUI.java
+@@ -72,6 +72,10 @@ public class VideoUI implements PreviewStatusListener {
+     @Override
+     public void onPreviewFlipped() {
+         mController.updateCameraOrientation();
++        // The camera may change while the screen rotation and aspect ratio stay equal.
++        if (mAspectRatio > UNSET) {
++            mController.updatePreviewAspectRatio(mAspectRatio);
++        }
+     }
+ 
+     private final GestureDetector.OnGestureListener mPreviewGestureListener
+@@ -155,8 +159,9 @@ public class VideoUI implements PreviewStatusListener {
+         float aspectRatio = ratio > 1 ? ratio : 1 / ratio;
+         if (aspectRatio != mAspectRatio) {
+             mAspectRatio = aspectRatio;
+-            mController.updatePreviewAspectRatio(mAspectRatio);
+         }
++        // Refresh from the active camera metadata even for an unchanged profile.
++        mController.updatePreviewAspectRatio(mAspectRatio);
+     }
+ 
+     public void setSwipingEnabled(boolean enable) {
