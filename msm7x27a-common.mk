@@ -248,6 +248,14 @@ PRODUCT_PROPERTY_OVERRIDES += \
     dalvik.vm.dex2oat-swap="false" \
     dalvik.vm.image-dex2oat-filter="speed"
 
+# Bound device-side compilation on the single-core V1 and Vee3. This does not
+# change compiler filters, JIT, DEXPREOPT, package selection or CPU clock limits.
+ifneq ($(filter cm_v1 cm_vee3 lineage_v1 lineage_vee3,$(TARGET_PRODUCT)),)
+PRODUCT_PROPERTY_OVERRIDES += \
+    dalvik.vm.dex2oat-threads=1 \
+    dalvik.vm.boot-dex2oat-threads=1
+endif
+
 # For applications to determine if they should turn off specific memory-intensive
 # features that work poorly on low-memory devices.
 PRODUCT_PROPERTY_OVERRIDES += \
