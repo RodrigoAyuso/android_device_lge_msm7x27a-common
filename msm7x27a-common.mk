@@ -265,3 +265,9 @@ PRODUCT_PROPERTY_OVERRIDES += \
 # Disable atlas services on low-ram targets
 PRODUCT_PROPERTY_OVERRIDES += \
     config.disable_atlas="true"
+
+# Install the launch response profile only on the single-core V1 and Vee3.
+ifneq ($(filter cm_v1 cm_vee3 lineage_v1 lineage_vee3,$(TARGET_PRODUCT)),)
+PRODUCT_COPY_FILES += \
+    device/lge/msm7x27a-common/rootdir/system/etc/init/lge-launch-response.rc:system/etc/init/lge-launch-response.rc
+endif
