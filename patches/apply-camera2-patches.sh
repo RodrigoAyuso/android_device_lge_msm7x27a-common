@@ -49,6 +49,7 @@ patches=(
     "$script_dir/apps_Camera2/0001-fix-lg-virtual-front-camera.patch"
     "$script_dir/apps_Camera2/0002-fix-capture-module-virtual-front.patch"
     "$script_dir/apps_Camera2/0003-fix-virtual-front-video-preview.patch"
+    "$script_dir/apps_Camera2/0004-mirror-virtual-front-recording.patch"
 )
 sections=()
 declare -A originals
@@ -153,6 +154,6 @@ if [[ -s "$pending" ]]; then
     git -C "$repo" apply -p4 "$pending"
     echo "Camera2: device patches applied; index and commit history preserved."
 else
-    echo "Camera2: all three device patches are already applied."
+    echo "Camera2: all four device patches are already applied."
 fi
 if "$build_marker"; then echo LGE_CAMERA2_READY; fi

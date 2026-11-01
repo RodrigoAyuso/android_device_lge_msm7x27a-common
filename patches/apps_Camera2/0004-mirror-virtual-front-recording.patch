@@ -1,0 +1,89 @@
+From b4324f1804184fc3913ed377baaeb8cd93748ef8 Mon Sep 17 00:00:00 2001
+From: LG Device Maintenance <patches@example.invalid>
+Date: Sun, 1 Nov 2026 09:44:46 +1000
+Subject: [PATCH] Camera2: request pixel reflection for LG virtual front video
+
+---
+ .../src/com/android/camera/VideoModule.java   | 13 ++++++-
+ .../com/android/camera/VirtualFrontVideo.java | 34 +++++++++++++++++++
+ 2 files changed, 46 insertions(+), 1 deletion(-)
+ create mode 100644 packages/apps/Camera2/src/com/android/camera/VirtualFrontVideo.java
+
+diff --git a/packages/apps/Camera2/src/com/android/camera/VideoModule.java b/packages/apps/Camera2/src/com/android/camera/VideoModule.java
+index 9437403..ab50b20 100644
+--- a/packages/apps/Camera2/src/com/android/camera/VideoModule.java
++++ b/packages/apps/Camera2/src/com/android/camera/VideoModule.java
+@@ -209,6 +209,7 @@ public class VideoModule extends CameraModule
+             };
+     private FocusOverlayManager mFocusManager;
+     private boolean mMirror;
++    private boolean mVideoMirrorApplied;
+     private boolean mFocusAreaSupported;
+     private boolean mMeteringAreaSupported;
+ 
+@@ -1125,6 +1126,15 @@ public class VideoModule extends CameraModule
+             }
+             requestedSizeLimit = myExtras.getLong(MediaStore.EXTRA_SIZE_LIMIT);
+         }
++        // Drain pending proxy settings before configuring the still-locked camera.
++        // This must precede unlock(), when ownership is passed to MediaRecorder.
++        mCameraDevice.refreshSettings();
++        int recordingRotation = CameraUtil.getImageRotation(
++                mActivity.getCameraProvider().getCharacteristics(mCameraId).getSensorOrientation(),
++                mAppController.getOrientationManager().getDeviceOrientation().getDegrees(),
++                isCameraFrontFacing() && !VirtualFrontCamera.isAlias(mCameraId));
++        mVideoMirrorApplied = VirtualFrontVideo.configureVideoMirror(
++                mCameraDevice.getCamera(), mCameraId, recordingRotation);
+         mMediaRecorder = new MediaRecorder();
+         // Unlock the camera object before passing it to media recorder.
+         mCameraDevice.unlock();
+@@ -1453,7 +1463,8 @@ public class VideoModule extends CameraModule
+         if (bitmap != null) {
+             // MetadataRetriever already rotates the thumbnail. We should rotate
+             // it to match the UI orientation (and mirror if it is front-facing camera).
+-            bitmap = CameraUtil.rotateAndMirror(bitmap, 0, isCameraFrontFacing());
++            bitmap = CameraUtil.rotateAndMirror(bitmap, 0,
++                    isCameraFrontFacing() && !mVideoMirrorApplied);
+         }
+         return bitmap;
+     }
+diff --git a/packages/apps/Camera2/src/com/android/camera/VirtualFrontVideo.java b/packages/apps/Camera2/src/com/android/camera/VirtualFrontVideo.java
+new file mode 100644
+index 0000000..365e179
+--- /dev/null
++++ b/packages/apps/Camera2/src/com/android/camera/VirtualFrontVideo.java
+@@ -0,0 +1,34 @@
++/* SPDX-License-Identifier: Apache-2.0 */
++package com.android.camera;
++
++import android.hardware.Camera;
++import android.util.Log;
++
++/** Request encoder pixel reflection without changing the preview stream. */
++final class VirtualFrontVideo {
++    private static final String TAG = "VirtualFrontVideo";
++    private VirtualFrontVideo() { }
++
++    static boolean configureVideoMirror(Camera camera, int cameraId, int rotation) {
++        if (camera == null) {
++            return false;
++        }
++        final boolean alias = VirtualFrontCamera.isAlias(cameraId);
++        Camera.Parameters parameters = camera.getParameters();
++        if (!"off,flip-h,flip-v".equals(parameters.get("lg-virtual-front-video-mirror-values"))) {
++            if (alias) {
++                Log.e(TAG, "LG virtual front: recording mirror requires the matching camera HAL");
++            }
++            return false;
++        }
++        // Reflection is horizontal after the MP4 orientation is applied.
++        String flip = !alias ? "off" : (rotation == 90 || rotation == 270) ? "flip-v" : "flip-h";
++        parameters.set("lg-virtual-front-video-mirror", flip);
++        camera.setParameters(parameters);
++        if (alias) {
++            Log.i(TAG, "LG virtual front: request encoder pixel mirror " + flip);
++        }
++        return alias;
++    }
++
++}

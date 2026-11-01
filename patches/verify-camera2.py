@@ -13,13 +13,15 @@ import zipfile
 BadZipError = getattr(zipfile, 'BadZipFile', None) or zipfile.BadZipfile
 SERIES = ('0001-fix-lg-virtual-front-camera.patch',
           '0002-fix-capture-module-virtual-front.patch',
-          '0003-fix-virtual-front-video-preview.patch')
+          '0003-fix-virtual-front-video-preview.patch',
+          '0004-mirror-virtual-front-recording.patch')
 MARKERS = {
     'virtual-front JPEG reflection': b'Mirroring failed; retaining the original capture',
     'CaptureModule preview correction': b'LG virtual front: rotate preview by 180 degrees',
     'CaptureSession JPEG reflection': b'Mirrored virtual-front JPEG ',
     'video TextureView correction': b'LG virtual front: rotate video preview by 180 degrees',
     'physical-sensor recording orientation': b'LG virtual front: use rear sensor video orientation',
+    'encoder pixel mirror request': b'LG virtual front: request encoder pixel mirror ',
 }
 
 
@@ -68,7 +70,7 @@ def verify_source(root, bundle):
             raise RuntimeError('Camera2 source is missing or conflicts with ' + name +
                                '\nRun apply-patches.sh --check before rebuilding.\n' +
                                err.decode('utf-8', 'replace'))
-    print('PASS: all three Camera2 source patches are present, including video.')
+    print('PASS: all four Camera2 source patches are present, including encoder reflection.')
 
 
 def built_files(root, device):
@@ -143,6 +145,19 @@ def verify_phone(adb, system, apk, companions):
     print('PASS: installed Camera2 APK/OAT files match this build.')
 
 
+def verify_camera_hal(system):
+    path = os.path.join(system, 'lib/hw/camera.msm7x27a.so')
+    if not os.path.isfile(path):
+        raise RuntimeError('Missing rebuilt camera HAL: ' + path)
+    data = read_bytes(path)
+    if data[:5] != b'\x7fELF\x01' or data[18:20] != b'\x28\x00':
+        raise RuntimeError('Expected an ARM32 camera HAL: ' + path)
+    if b'LG virtual front: encoder pixel mirror enabled' not in data:
+        raise RuntimeError('The camera HAL is missing encoder reflection. Rebuild the ROM, not just Camera2.')
+    print('PASS: built ARM camera HAL contains encoder pixel reflection.')
+    return path
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', default=os.path.expanduser('~/Android/LineageOS'))
@@ -159,11 +174,12 @@ def main():
     if args.source_only:
         return
     system, apk, companions = built_files(root, args.device)
+    hal = verify_camera_hal(system)
     inspect_code(apk, companions)
     if args.phone:
         adb = [args.adb] + (['-s', args.serial] if args.serial else [])
-        verify_phone(adb, system, apk, companions)
-    print('File checks passed. Confirm preview, photos, video orientation and focus on the phone.')
+        verify_phone(adb, system, apk, companions + [hal])
+    print('File checks passed. Confirm preview, photos, mirrored recordings, audio and focus on the phone.')
 
 
 if __name__ == '__main__':

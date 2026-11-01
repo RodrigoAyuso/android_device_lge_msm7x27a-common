@@ -869,6 +869,7 @@ status_t QCameraStream_preview::processPreviewFrameWithDisplay(
   bool rcb2 = false;
   bool pcb1 = false;
   bool previewMem1 = false;
+  bool videoFrameReady = true;
 
   mStopCallbackLock.lock();
   Mutex::Autolock plock(mPreviewFrameLock);
@@ -923,6 +924,16 @@ status_t QCameraStream_preview::processPreviewFrameWithDisplay(
     convert_ycrcb420_to_yv12(frame);
    }
 
+
+  // Copy while the camera still owns the source, before enqueue_buffer can
+  // hand it to the preview consumer. Stop serializes pool cleanup on mRecordLock.
+  if (rcb && mVFEOutputs == 1) {
+    Mutex::Autolock recordLock(&mHalCamCtrl->mRecordLock);
+    if (mHalCamCtrl->mStartRecording && (mHalCamCtrl->mMsgEnabled & CAMERA_MSG_VIDEO_FRAME)) {
+      QCameraStream_record *record = static_cast<QCameraStream_record *>(mHalCamCtrl->mStreamRecord);
+      videoFrameReady = record && record->prepareVideoMirror(frame->def.frame, frame->def.idx);
+    }
+  }
 
   if(mHFRFrameSkip == 1)
   {
@@ -1042,7 +1053,7 @@ status_t QCameraStream_preview::processPreviewFrameWithDisplay(
     ALOGD("%s PCB is not enabled", __func__);
   }
   int flagwait = 0;
-  if(rcb != NULL && mVFEOutputs == 1)
+  if(rcb != NULL && mVFEOutputs == 1 && videoFrameReady)
   {
       if(mHalCamCtrl->mStartRecording == true &&
               ( mHalCamCtrl->mMsgEnabled & CAMERA_MSG_VIDEO_FRAME))
@@ -1082,9 +1093,16 @@ status_t QCameraStream_preview::processPreviewFrameWithDisplay(
         ALOGD("calling rcb metadata");
     }
     if(rcb2 == true) {
-        rcb(timeStamp, CAMERA_MSG_VIDEO_FRAME,
-            mHalCamCtrl->mPreviewMemory.camera_memory[frame->def.idx],
-            0, mHalCamCtrl->mCallbackCookie);
+        Mutex::Autolock recordLock(&mHalCamCtrl->mRecordLock);
+        if (mHalCamCtrl->mStartRecording) {
+            QCameraStream_record *record = static_cast<QCameraStream_record *>(mHalCamCtrl->mStreamRecord);
+            camera_memory_t *mirrored = record->getMirroredVideoBuffer(frame->def.idx);
+            rcb(timeStamp, CAMERA_MSG_VIDEO_FRAME,
+                mirrored ? mirrored : mHalCamCtrl->mPreviewMemory.camera_memory[frame->def.idx],
+                0, mHalCamCtrl->mCallbackCookie);
+        } else {
+            flagwait = 0;
+        }
     }
 
     if(flagwait){

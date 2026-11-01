@@ -1375,6 +1375,14 @@ void QCameraHardwareInterface::initDefaultParameters()
        mParameters.set(QCameraParameters::KEY_QC_SINGLE_ISP_OUTPUT_ENABLED, "false");
     }
 
+    char mirrorHardware[PROPERTY_VALUE_MAX];
+    property_get("ro.hardware", mirrorHardware, "");
+    if (mNuberOfVFEOutputs == 1 && (!strcmp(mirrorHardware, "v1")
+            || !strcmp(mirrorHardware, "vee3"))) {
+        mParameters.set("lg-virtual-front-video-mirror-values", "off,flip-h,flip-v");
+        mParameters.set("lg-virtual-front-video-mirror", "off");
+    }
+
     mFaceZoomEnabled = FALSE;
     mParameters.set("display_mode","portrait");
     mParameters.set("face_position","(-1,-1)");
@@ -1417,6 +1425,7 @@ status_t QCameraHardwareInterface::setParameters(const QCameraParameters& params
 //    Mutex::Autolock l(&mLock);
     status_t rc, final_rc = NO_ERROR;
 
+    if ((rc = setStreamFlipHint(params)))               final_rc = rc;
     if ((rc = setCameraMode(params)))                   final_rc = rc;
     if ((rc = setChannelInterfaceMask(params)))         final_rc = rc;
     if ((rc = setPowerMode(params)))                    final_rc = rc;
@@ -4473,7 +4482,15 @@ status_t QCameraHardwareInterface::setChannelInterfaceMask(const CameraParameter
 
 
 status_t QCameraHardwareInterface::setStreamFlipHint(const QCameraParameters& params) {
-  return NO_ERROR; //TBD
+    const char *flip = params.get("lg-virtual-front-video-mirror");
+    if (!flip)
+        return NO_ERROR;
+    if (!mParameters.get("lg-virtual-front-video-mirror-values"))
+        return !strcmp(flip, "off") ? NO_ERROR : BAD_VALUE;
+    if (strcmp(flip, "off") && strcmp(flip, "flip-h") && strcmp(flip, "flip-v"))
+        return BAD_VALUE;
+    mParameters.set("lg-virtual-front-video-mirror", flip);
+    return NO_ERROR;
 }
 
 status_t QCameraHardwareInterface::setFaceZoom(const QCameraParameters& params)

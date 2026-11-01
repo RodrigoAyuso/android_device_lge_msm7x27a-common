@@ -1,6 +1,6 @@
 # Camera2 patches prepared with ART and Bluetooth
 
-The common DT carries all three Camera2 application patches. They are prepared
+The common DT carries all four Camera2 application patches. They are prepared
 through the same explicit Bash/Git workflow as the ART and Bluetooth patches:
 
 ~~~sh
@@ -40,11 +40,10 @@ Camera2 remains optional if its project is absent. If selected for the ROM,
 keep the standard packages/apps/Camera2 cm-14.1 project in the manifest. The
 coordinator does not download missing source during a build.
 
-The photo and video application patches are unchanged from the preceding
-working photo/video package. The virtual-front video preview has its own
-TextureView rotation correction and same-profile refresh. The recorder uses
-the physical rear sensor's rotation convention. The saved video frames are
-not pixel-mirrored; the hardware recording path is retained. Photo JPEG
+The first three application payloads are unchanged. The virtual-front video
+preview retains its TextureView rotation correction and same-profile refresh.
+The recorder retains the physical rear sensor's rotation convention. A fourth
+patch requests pixel reflection in a separate HAL encoder pool. Photo JPEG
 reflection and its EXIF handling remain as before.
 
 After a full build:
@@ -57,3 +56,16 @@ The verifier supports Python 2.7 and 3 without extra modules. Add --phone after
 installing the new ROM/system image to compare APK/OAT hashes. File checks do
 not replace testing video preview, recording orientation, camera switching,
 tap focus and the already working photo behavior on the handset.
+
+
+## Recorded virtual-front video reflection
+
+The fourth patch requests pixel reflection through the device-specific camera
+HAL before Camera2 unlocks the camera for MediaRecorder. This applies only to
+the known V1/Vee3 rear-sensor alias. A separate encoder pool protects the working
+preview from changes. The reflection axis accounts for recording orientation;
+the review thumbnail is not mirrored a second time.
+
+Rebuild and install the camera HAL and Camera2 together. Replacing only the APK
+does not implement video reflection on the old HAL. The helper logs an explicit
+message if the matching HAL capability is absent.
