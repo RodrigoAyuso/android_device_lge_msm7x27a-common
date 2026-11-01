@@ -19,6 +19,11 @@ $(call inherit-product, vendor/lge/msm7x27a-common/msm7x27a-common-vendor.mk)
 
 DEVICE_PACKAGE_OVERLAYS += device/lge/msm7x27a-common/overlay
 
+# Keep the stock wallpaper within the legacy display heap on V1 and Vee3.
+ifneq ($(filter cm_v1 cm_vee3 lineage_v1 lineage_vee3,$(TARGET_PRODUCT)),)
+PRODUCT_PACKAGE_OVERLAYS := device/lge/msm7x27a-common/overlay-lowram-wallpaper $(PRODUCT_PACKAGE_OVERLAYS)
+endif
+
 # Common ramdisk
 PRODUCT_PACKAGES += init.lge.shared.rc
 PRODUCT_COPY_FILES += \
