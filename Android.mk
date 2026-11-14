@@ -1,17 +1,12 @@
-# Copyright (C) 2013-2016 The CyanogenMod Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
+# Shared Android 8.1 modules for the legacy LG MSM7x27a family.
+LOCAL_PATH := $(call my-dir)
 ifneq ($(filter e610 p700 v1 vee3,$(TARGET_DEVICE)),)
-include $(call all-makefiles-under,$(call my-dir))
+include device/lge/msm7x27a-common/fallback/Android.mk
+include device/lge/msm7x27a-common/graphics/Android.mk
+include device/lge/msm7x27a-common/audio/Android.mk
+ifeq ($(TARGET_DEVICE):$(TARGET_BUILD_VARIANT),vee3:userdebug)
+include device/lge/msm7x27a-common/camera/Android.mk
+include device/lge/msm7x27a-common/libbt-vendor/Android.mk
+include device/lge/vee3/connectivity/Android.mk
+endif
 endif

@@ -1,0 +1,8 @@
+# Legacy USB transport required by the Oreo userdebug port.
+# Keep the existing authentication/root policy in adbd.
+on boot && property:ro.debuggable=1 && property:debug.lge.firstboot=1
+    chown root shell /dev/android_adb
+    chmod 0660 /dev/android_adb
+    setprop sys.usb.configfs 0
+    setprop persist.sys.usb.config adb
+    setprop sys.usb.config adb

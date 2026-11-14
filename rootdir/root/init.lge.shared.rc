@@ -35,22 +35,22 @@ on fs
 
     mkdir /persist 0771 system system
     wait /dev/block/platform/msm_sdcc.3/by-num/p15
-    exec /system/bin/e2fsck -fy /dev/block/platform/msm_sdcc.3/by-num/p15
+    exec /system/bin/e2fsck ${ro.lge.boot.fsck_flags:--fy} /dev/block/platform/msm_sdcc.3/by-num/p15
     mount ext4 /dev/block/platform/msm_sdcc.3/by-num/p15 /persist nosuid nodev barrier=1 errors=continue
 
     mkdir /persist-lg  0771 system system
     wait /dev/block/platform/msm_sdcc.3/by-num/p18
-    exec /system/bin/e2fsck -fy /dev/block/platform/msm_sdcc.3/by-num/p18
+    exec /system/bin/e2fsck ${ro.lge.boot.fsck_flags:--fy} /dev/block/platform/msm_sdcc.3/by-num/p18
     mount ext4 /dev/block/platform/msm_sdcc.3/by-num/p18 /persist-lg nosuid nodev barrier=1 errors=continue
 
     mkdir /mpt 0771 system system
     wait /dev/block/platform/msm_sdcc.3/by-num/p23
-    exec /system/bin/e2fsck -fy /dev/block/platform/msm_sdcc.3/by-num/p23
+    exec /system/bin/e2fsck ${ro.lge.boot.fsck_flags:--fy} /dev/block/platform/msm_sdcc.3/by-num/p23
     mount ext4 /dev/block/platform/msm_sdcc.3/by-num/p23 /mpt nosuid nodev barrier=1 errors=continue
 
     mkdir /cust 0771 system system
     wait /dev/block/platform/msm_sdcc.3/by-num/p25
-    exec /system/bin/e2fsck -fy /dev/block/platform/msm_sdcc.3/by-num/p25
+    exec /system/bin/e2fsck ${ro.lge.boot.fsck_flags:--fy} /dev/block/platform/msm_sdcc.3/by-num/p25
     mount ext4 /dev/block/platform/msm_sdcc.3/by-num/p25 /cust nosuid nodev barrier=1 errors=continue
 
 on post-fs-data
@@ -271,14 +271,6 @@ on boot
 
     start qcamerasvr
 
-# Primary RIL daemon
-service ril-daemon /system/bin/rild
-    class main
-    socket rild stream 660 root radio
-    socket rild-debug stream 660 radio system
-    user root
-    group radio cache inet misc audio sdcard_rw qcom_oncrpc qcom_diag log diag
-
 service qcamerasvr /system/bin/mm-qcamera-daemon
     class late_start
     user camera
@@ -291,38 +283,6 @@ service rmt_storage /system/bin/rmt_storage
 
 service sensord /system/bin/sensord
     class main
-    oneshot
-
-# WLAN
-service p2p_supplicant /system/bin/logwrapper /system/bin/wpa_supplicant \
-    -ip2p0 -Dnl80211 -c/data/misc/wifi/p2p_supplicant.conf \
-    -I/system/etc/wifi/p2p_supplicant_overlay.conf -N \
-    -iwlan0 -Dnl80211 -c/data/misc/wifi/wpa_supplicant.conf \
-    -I/system/etc/wifi/wpa_supplicant_overlay.conf \
-    -puse_p2p_group_interface=1 -e/data/misc/wifi/entropy.bin \
-    -g@android:wpa_wlan0
-    #   we will start as root and wpa_supplicant will switch to user wifi
-    #   after setting up the capabilities required for WEXT
-    #   user wifi
-    #   group wifi inet keystore
-    class main
-    socket wpa_wlan0 dgram 660 wifi wifi
-    disabled
-    group system wakelock
-    oneshot
-
-service wpa_supplicant /system/bin/wpa_supplicant \
-    -iwlan0 -Dnl80211 -c/data/misc/wifi/wpa_supplicant.conf -O \
-    -I/system/etc/wifi/wpa_supplicant_overlay.conf \
-    -e/data/misc/wifi/entropy.bin -g@android:wpa_wlan0
-    #   we will start as root and wpa_supplicant will switch to user wifi
-    #   after setting up the capabilities required for WEXT
-    #   user wifi
-    #   group wifi inet keystore
-    class main
-    socket wpa_wlan0 dgram 660 wifi wifi
-    disabled
-    group system wakelock
     oneshot
 
 service qmuxd /system/bin/qmuxd

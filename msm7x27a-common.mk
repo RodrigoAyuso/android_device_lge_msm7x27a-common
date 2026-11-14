@@ -12,21 +12,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+$(call inherit-product, device/lge/msm7x27a-common/runtime/compat.mk)
+$(call inherit-product, device/lge/msm7x27a-common/graphics/product.mk)
+
 $(call inherit-product, device/common/gps/gps_us_supl.mk)
-$(call inherit-product, device/lge/msm7x27a-common/prebuilt/prebuilt.mk)
 $(call inherit-product, frameworks/native/build/phone-hdpi-512-dalvik-heap.mk)
 $(call inherit-product, vendor/lge/msm7x27a-common/msm7x27a-common-vendor.mk)
 
 DEVICE_PACKAGE_OVERLAYS += device/lge/msm7x27a-common/overlay
 
-# Keep the stock wallpaper within the legacy display heap on V1 and Vee3.
-ifneq ($(filter cm_v1 cm_vee3 lineage_v1 lineage_vee3,$(TARGET_PRODUCT)),)
+# V1 retains its existing wallpaper; Vee3 gets the Oreo artwork at native scale.
+ifneq ($(filter cm_v1 lineage_v1,$(TARGET_PRODUCT)),)
 PRODUCT_PACKAGE_OVERLAYS := device/lge/msm7x27a-common/overlay-lowram-wallpaper $(PRODUCT_PACKAGE_OVERLAYS)
+endif
+ifneq ($(filter cm_vee3 lineage_vee3,$(TARGET_PRODUCT)),)
+PRODUCT_PACKAGE_OVERLAYS := device/lge/vee3/performance/overlay $(PRODUCT_PACKAGE_OVERLAYS)
 endif
 
 # Common ramdisk
-PRODUCT_PACKAGES += init.lge.shared.rc
 PRODUCT_COPY_FILES += \
+    device/lge/msm7x27a-common/rootdir/root/init.lge.shared.rc:root/init.lge.shared.rc \
     device/lge/msm7x27a-common/rootdir/root/fstab.lge.shared:root/fstab.lge.shared \
     device/lge/msm7x27a-common/rootdir/root/init.lge.usb.rc:root/init.lge.usb.rc
 
@@ -82,6 +87,8 @@ PRODUCT_COPY_FILES += \
     frameworks/native/data/etc/handheld_core_hardware.xml:system/etc/permissions/handheld_core_hardware.xml
 
 # Google Media Codecs
+PRODUCT_PACKAGES += libstagefright_soft_avcenc
+
 PRODUCT_COPY_FILES += \
     frameworks/av/media/libstagefright/data/media_codecs_google_audio.xml:system/etc/media_codecs_google_audio.xml \
     frameworks/av/media/libstagefright/data/media_codecs_google_telephony.xml:system/etc/media_codecs_google_telephony.xml \
@@ -116,6 +123,9 @@ PRODUCT_PACKAGES += \
 # Power Hal
 PRODUCT_PACKAGES += \
     power.msm7x27a
+
+# Camera application: upstream Oreo Snap with its required JNI libraries.
+PRODUCT_PACKAGES += Snap
 
 # Camera Hal
 PRODUCT_PACKAGES += \
@@ -170,13 +180,6 @@ PRODUCT_PACKAGES += \
 # Adreno
 PRODUCT_PACKAGES += \
     libstlport
-
-# For userdebug builds
-ifeq ($(TARGET_BUILD_VARIANT),userdebug)
-ADDITIONAL_DEFAULT_PROPERTIES += \
-    ro.secure="false" \
-    ro.adb.secure="false"
-endif
 
 # SDCard
 PRODUCT_DEFAULT_PROPERTY_OVERRIDES += \
@@ -236,16 +239,13 @@ PRODUCT_PROPERTY_OVERRIDES += \
 
 # Debug
 PRODUCT_PROPERTY_OVERRIDES += \
-    debug.gralloc.map_fb_memory="1" \
+     \
     debug.hwc.fakevsync="1"
 
 # Audio
 PRODUCT_PROPERTY_OVERRIDES += \
     audio.offload.disable="1"
 
-# Force Camera Portability API, since newer camera API isn't supported.
-PRODUCT_PROPERTY_OVERRIDES += \
-    camera2.portability.force_api="1"
 
 # ART
 PRODUCT_PROPERTY_OVERRIDES += \
