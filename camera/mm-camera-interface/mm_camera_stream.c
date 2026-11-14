@@ -28,6 +28,7 @@ IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 #include <pthread.h>
+#include <stdlib.h>
 #include "mm_camera_dbg.h"
 #include <errno.h>
 #include <sys/ioctl.h>

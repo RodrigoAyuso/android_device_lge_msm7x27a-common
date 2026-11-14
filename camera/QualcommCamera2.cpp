@@ -184,8 +184,10 @@ extern "C" int get_camera_info(int camera_id, struct camera_info *info)
     }
 
     if(info) {
-        struct CameraInfo camInfo;
-        memset(&camInfo, -1, sizeof (struct CameraInfo));
+        struct camera_info camInfo;
+        memset(&camInfo, 0, sizeof (struct camera_info));
+        camInfo.facing = -1;
+        camInfo.orientation = -1;
         
         // Pass physical_id to the original HAL
         android::HAL_getCameraInfo(physical_id, &camInfo);
@@ -237,6 +239,10 @@ extern "C" int  camera_device_open(
             
             // We use physicalId to open the real hardware
             camHal->hardware = new QCameraHardwareInterface(physicalId, mode); 
+#ifdef LGE_CAMERA_OREO_FRAME_COMPAT
+            if (camHal->hardware)
+                camHal->hardware->setLogicalCameraId(cameraId);
+#endif
             
             if (camHal->hardware && camHal->hardware->isCameraReady()) {
 				camHal->cameraId = cameraId; // We keep the original logical ID

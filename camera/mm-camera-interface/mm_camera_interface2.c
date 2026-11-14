@@ -639,7 +639,7 @@ extern mm_camera_t * mm_camera_query (uint8_t *num_cameras)
         break;
       }
 
-      if(strncmp(mdev_info.model, QCAMERA_NAME, sizeof(mdev_info.model) != 0)) {
+      if (strncmp(mdev_info.model, QCAMERA_NAME, sizeof(mdev_info.model)) != 0) {
         close(dev_fd);
         continue;
       }

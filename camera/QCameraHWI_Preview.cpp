@@ -202,7 +202,7 @@ status_t QCameraStream_preview::getBufferFromSurface() {
 #endif
 		mHalCamCtrl->mPreviewMemory.camera_memory[cnt] =
 		    mHalCamCtrl->mGetMemory(mHalCamCtrl->mPreviewMemory.private_buffer_handle[cnt]->fd,
-			mHalCamCtrl->mPreviewMemory.private_buffer_handle[cnt]->size, 1, (void *)this);
+			mHalCamCtrl->mPreviewMemory.private_buffer_handle[cnt]->size, 1, mHalCamCtrl->mCallbackCookie);
 		ALOGE("%s: idx = %d, fd = %d, size = %d, offset = %d", __func__,
             cnt, mHalCamCtrl->mPreviewMemory.private_buffer_handle[cnt]->fd,
       mHalCamCtrl->mPreviewMemory.private_buffer_handle[cnt]->size,
@@ -349,7 +349,7 @@ status_t   QCameraStream_preview::freeBufferNoDisplay()
 
 void QCameraStream_preview::notifyROIEvent(fd_roi_t roi)
 {
-    camera_memory_t *data = mHalCamCtrl->mGetMemory(-1, 1, 1, NULL);
+    camera_memory_t *data = mHalCamCtrl->mGetMemory(-1, 1, 1, mHalCamCtrl->mCallbackCookie);
     switch (roi.type) {
     case FD_ROI_TYPE_HEADER:
         {
@@ -931,7 +931,7 @@ status_t QCameraStream_preview::processPreviewFrameWithDisplay(
     Mutex::Autolock recordLock(&mHalCamCtrl->mRecordLock);
     if (mHalCamCtrl->mStartRecording && (mHalCamCtrl->mMsgEnabled & CAMERA_MSG_VIDEO_FRAME)) {
       QCameraStream_record *record = static_cast<QCameraStream_record *>(mHalCamCtrl->mStreamRecord);
-      videoFrameReady = record && record->prepareVideoMirror(frame->def.frame, frame->def.idx);
+      videoFrameReady = record && record->prepareVideoFrame(frame->def.frame, frame->def.idx);
     }
   }
 
@@ -1096,9 +1096,9 @@ status_t QCameraStream_preview::processPreviewFrameWithDisplay(
         Mutex::Autolock recordLock(&mHalCamCtrl->mRecordLock);
         if (mHalCamCtrl->mStartRecording) {
             QCameraStream_record *record = static_cast<QCameraStream_record *>(mHalCamCtrl->mStreamRecord);
-            camera_memory_t *mirrored = record->getMirroredVideoBuffer(frame->def.idx);
+            camera_memory_t *videoBuffer = record->getVideoFrameBuffer(frame->def.idx);
             rcb(timeStamp, CAMERA_MSG_VIDEO_FRAME,
-                mirrored ? mirrored : mHalCamCtrl->mPreviewMemory.camera_memory[frame->def.idx],
+                videoBuffer ? videoBuffer : mHalCamCtrl->mPreviewMemory.camera_memory[frame->def.idx],
                 0, mHalCamCtrl->mCallbackCookie);
         } else {
             flagwait = 0;

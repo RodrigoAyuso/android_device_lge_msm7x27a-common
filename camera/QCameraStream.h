@@ -175,8 +175,8 @@ public:
   virtual             ~QCameraStream_record();
 
   status_t processRecordFrame(void *data);
-  bool prepareVideoMirror(const struct msm_frame *frame, int index);
-  camera_memory_t *getMirroredVideoBuffer(int index);
+  bool prepareVideoFrame(const struct msm_frame *frame, int index);
+  camera_memory_t *getVideoFrameBuffer(int index);
   status_t initEncodeBuffers();
   status_t getBufferInfo(sp<IMemory>& Frame, size_t *alignedSize);
   //sp<IMemoryHeap> getHeap() const;
@@ -192,6 +192,7 @@ private:
   cam_ctrl_dimension_t             dim;
   bool mDebugFps;
   int mVideoMirrorMode;
+  bool mCopyVideoFrames;
   int mEncodeBufferCount;
   int mVideoMirrorWidth;
   int mVideoMirrorHeight;
@@ -396,6 +397,10 @@ private:
     int mSnapshotFormat;
     int mPictureWidth;
     int mPictureHeight;
+    int mCaptureRotation;
+#ifdef LGE_CAMERA_NATIVE_HDR_EFFECT
+    bool mCaptureHdrEffect;
+#endif
     cam_format_t mPictureFormat;
     int mPostviewWidth;
     int mPostviewHeight;

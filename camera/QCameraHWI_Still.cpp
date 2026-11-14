@@ -28,6 +28,12 @@
 #include <math.h>
 #include "QCameraHAL.h"
 #include "QCameraHWI.h"
+#ifdef LGE_CAMERA_OREO_FRAME_COMPAT
+#include "compat/FrameTransform.h"
+#endif
+#ifdef LGE_CAMERA_NATIVE_HDR_EFFECT
+#include "hdr-effect/HdrEffect.h"
+#endif
 
 #define THUMBNAIL_DEFAULT_WIDTH 512
 #define THUMBNAIL_DEFAULT_HEIGHT 384
@@ -316,7 +322,7 @@ end:
     }
     if(!fail_cb_flag) {
         camera_memory_t *encodedMem = mHalCamCtrl->mGetMemory(
-            mHalCamCtrl->mJpegMemory.fd[0], mJpegOffset, 1, mHalCamCtrl);
+            mHalCamCtrl->mJpegMemory.fd[0], mJpegOffset, 1, mHalCamCtrl->mCallbackCookie);
         if (!encodedMem || !encodedMem->data) {
             ALOGE("%s: mGetMemory failed.\n", __func__);
         }
@@ -770,6 +776,12 @@ initSnapshotBuffers(cam_ctrl_dimension_t *dim, int num_of_buf)
         rotation = mHalCamCtrl->getJpegRotation();
     else
         rotation = 0;
+    mCaptureRotation = rotation;
+#ifdef LGE_CAMERA_NATIVE_HDR_EFFECT
+    // Freeze the setting for this capture, independent of later UI changes.
+    mCaptureHdrEffect = mHalCamCtrl->isNativeHdrEffect() && !isZSLMode()
+            && !isLiveSnapshot() && !isFullSizeLiveshot();
+#endif
     if(rotation != dim->rotation) {
         dim->rotation = rotation;
         ret = cam_config_set_parm(mHalCamCtrl->mCameraId, MM_CAMERA_PARM_DIMENSION, dim);
@@ -1792,6 +1804,88 @@ encodeDisplayAndSave(mm_camera_ch_data_buf_t* recvd_frame,
       ALOGD("%s: set JPEG rotation in ZSL mode", __func__);
       mHalCamCtrl->setJpegRotation(isZSLMode());
     }
+#ifdef LGE_CAMERA_NATIVE_HDR_EFFECT
+    if (mCaptureHdrEffect && !isZSLMode() && !isLiveSnapshot()
+            && !isFullSizeLiveshot()) {
+        // These buffers are owned by the capture path; preview/video is untouched.
+        struct msm_frame *main = recvd_frame ? recvd_frame->snapshot.main.frame : NULL;
+        struct msm_frame *thumb = recvd_frame ? recvd_frame->snapshot.thumbnail.frame : NULL;
+        const bool validMain = main && (mPictureFormat == CAMERA_YUV_420_NV21
+                || mPictureFormat == CAMERA_YUV_420_NV12);
+        const bool validThumb = mDropThumbnail || (thumb
+                && (mThumbnailFormat == CAMERA_YUV_420_NV21
+                    || mThumbnailFormat == CAMERA_YUV_420_NV12));
+        if (validMain && validThumb) {
+            const LgeFrame420 picture = {
+                reinterpret_cast<uint8_t *>(main->buffer), main->ion_alloc.len,
+                static_cast<size_t>(mPictureWidth), static_cast<size_t>(mPictureHeight),
+                static_cast<size_t>(mPictureWidth), main->y_off, main->cbcr_off
+            };
+            LgeFrame420 thumbnail = {};
+            if (!mDropThumbnail) {
+                thumbnail.data = reinterpret_cast<uint8_t *>(thumb->buffer);
+                thumbnail.size = thumb->ion_alloc.len;
+                thumbnail.width = thumbnail.stride = mThumbnailWidth;
+                thumbnail.height = mThumbnailHeight;
+                thumbnail.yOffset = thumb->y_off;
+                thumbnail.uvOffset = thumb->cbcr_off;
+            }
+            LgeHdrStats stats = {};
+            if (lgeApplyHdrEffect(picture, mDropThumbnail ? NULL : &thumbnail, &stats)) {
+                ALOGI("LG HDR effect: single-frame-v1 applied=%d shadow=%u highlight=%u samples=%u",
+                        static_cast<int>(stats.changed),
+                        static_cast<unsigned int>(stats.shadowLift),
+                        static_cast<unsigned int>(stats.highlightPull), stats.samples);
+            } else {
+                ALOGW("LG HDR effect: invalid planes, keeping normal capture");
+            }
+        } else {
+            ALOGW("LG HDR effect: unsupported input, keeping normal capture");
+        }
+    }
+#endif
+#ifdef LGE_CAMERA_OREO_FRAME_COMPAT
+    if (mHalCamCtrl->isVirtualFrontCamera() && !isZSLMode()
+            && !isLiveSnapshot() && !isFullSizeLiveshot()) {
+        if (!recvd_frame)
+            return BAD_VALUE;
+        struct msm_frame *main = recvd_frame->snapshot.main.frame;
+        struct msm_frame *thumb = recvd_frame->snapshot.thumbnail.frame;
+        const int rotation = mCaptureRotation;
+        const int flip = lgePhotoMirrorAxis(rotation);
+        if (!main || (mPictureFormat != CAMERA_YUV_420_NV21
+                && mPictureFormat != CAMERA_YUV_420_NV12))
+            return BAD_VALUE;
+        const LgeFrame420 picture = {
+            reinterpret_cast<uint8_t *>(main->buffer), main->ion_alloc.len,
+            static_cast<size_t>(mPictureWidth), static_cast<size_t>(mPictureHeight),
+            static_cast<size_t>(mPictureWidth), main->y_off, main->cbcr_off
+        };
+        LgeFrame420 thumbnail = {};
+        if (!mDropThumbnail) {
+            if (!thumb || thumb->buffer == main->buffer
+                    || (mThumbnailFormat != CAMERA_YUV_420_NV21
+                        && mThumbnailFormat != CAMERA_YUV_420_NV12))
+                return BAD_VALUE;
+            thumbnail.data = reinterpret_cast<uint8_t *>(thumb->buffer);
+            thumbnail.size = thumb->ion_alloc.len;
+            thumbnail.width = thumbnail.stride = mThumbnailWidth;
+            thumbnail.height = mThumbnailHeight;
+            thumbnail.yOffset = thumb->y_off;
+            thumbnail.uvOffset = thumb->cbcr_off;
+        }
+        // Validate both private capture planes before changing either one.
+        if (flip < 0 || !lgeValidFrame420(picture)
+                || (!mDropThumbnail && !lgeValidFrame420(thumbnail))) {
+            ALOGE("LG virtual front: unsupported JPEG input layout");
+            return BAD_VALUE;
+        }
+        lgeMirrorPhoto420(picture, flip);
+        if (!mDropThumbnail)
+            lgeMirrorPhoto420(thumbnail, flip);
+        ALOGI("LG virtual front: mirrored JPEG and thumbnail, rotation=%d", rotation);
+    }
+#endif
 #ifdef USE_ION
     /*Clean out(Write-back) cache before sending for JPEG*/
     memset(&cache_inv_data, 0, sizeof(struct ion_flush_data));
@@ -2185,6 +2279,9 @@ QCameraStream_Snapshot(int cameraId, camera_mode_t mode)
   {
     ALOGV("%s: E", __func__);
 
+#ifdef LGE_CAMERA_NATIVE_HDR_EFFECT
+    mCaptureHdrEffect = false;
+#endif
     /*initialize snapshot queue*/
     mSnapshotQueue.init();
     memset (&mHdrInfo, 0, sizeof(snap_hdr_record_t ));

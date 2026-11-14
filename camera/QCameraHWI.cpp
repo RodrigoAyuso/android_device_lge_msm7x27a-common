@@ -156,6 +156,7 @@ int32_t QCameraHardwareInterface::createRdi()
 QCameraHardwareInterface::
 QCameraHardwareInterface(int cameraId, int mode)
                   : mCameraId(cameraId),
+                    mLogicalCameraId(cameraId),
                     mParameters(),
                     mMsgEnabled(0),
                     mNotifyCb(0),
@@ -223,6 +224,9 @@ QCameraHardwareInterface(int cameraId, int mode)
                     mSnapCbDisabled(false),
                     mSnapshotFlip(FLIP_NONE)
 {
+#ifdef LGE_CAMERA_OREO_FRAME_COMPAT
+    mStoreMetaDataInFrame = false;
+#endif
     ALOGI("QCameraHardwareInterface: E");
     int32_t result = MM_CAMERA_E_GENERAL;
     mMobiCatEnabled = false;
@@ -751,6 +755,14 @@ bool QCameraHardwareInterface::isZSLMode() {
 int QCameraHardwareInterface::getHDRMode() {
     return mHdrMode;
 }
+
+#ifdef LGE_CAMERA_NATIVE_HDR_EFFECT
+bool QCameraHardwareInterface::isNativeHdrEffect() const {
+    const char *scene = mParameters.get(QCameraParameters::KEY_SCENE_MODE);
+    return scene && !strcmp(scene, "hdr") && !mRecordingHint
+            && mPreviewState != QCAMERA_HAL_RECORDING_STARTED;
+}
+#endif
 
 void QCameraHardwareInterface::debugShowPreviewFPS() const
 {
@@ -2418,9 +2430,16 @@ status_t QCameraHardwareInterface::setPreviewWindow(preview_stream_ops_t* window
 
 int QCameraHardwareInterface::storeMetaDataInBuffers(int enable)
 {
+#ifdef LGE_CAMERA_OREO_FRAME_COMPAT
+    // Oreo must negotiate DATA_CALLBACK_YUV instead of an 8-byte legacy
+    // camera metadata packet that the current AVC encoder cannot consume.
+    mStoreMetaDataInFrame = false;
+    return enable ? INVALID_OPERATION : NO_ERROR;
+#else
     /* this is a dummy func now. fix me later */
     mStoreMetaDataInFrame = enable;
     return 0;
+#endif
 }
 
 status_t QCameraHardwareInterface::sendMappingBuf(int ext_mode, int idx, int fd,
@@ -2682,7 +2701,7 @@ int QCameraHardwareInterface::initHeapMem( QCameraHalHeap_t *heap,
             }
         }
 #endif
-        heap->camera_memory[i] =  mGetMemory( heap->fd[i], buf_len, 1, (void *)this);
+        heap->camera_memory[i] =  mGetMemory( heap->fd[i], buf_len, 1, mCallbackCookie);
 
         if (heap->camera_memory[i] == NULL ) {
             ALOGE("Getmem fail %d: ", i);

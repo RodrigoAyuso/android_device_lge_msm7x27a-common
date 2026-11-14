@@ -27,6 +27,9 @@
 
 #include "QCameraStream.h"
 #include "QCameraVideoMirror.h"
+#ifdef LGE_CAMERA_OREO_FRAME_COMPAT
+#include "compat/FrameTransform.h"
+#endif
 
 
 #define LIKELY(exp)   __builtin_expect(!!(exp), 1)
@@ -71,6 +74,7 @@ QCameraStream_record::QCameraStream_record(int cameraId,
   :QCameraStream(cameraId,mode),
    mDebugFps(false),
    mVideoMirrorMode(LGE_VIDEO_MIRROR_OFF),
+   mCopyVideoFrames(false),
    mEncodeBufferCount(0),
    mVideoMirrorWidth(0),
    mVideoMirrorHeight(0),
@@ -201,14 +205,29 @@ status_t QCameraStream_record::processRecordFrame(void *data)
 
 //Record Related Functions
 // Caller holds mRecordLock; stop cannot free this pool during a frame copy.
-bool QCameraStream_record::prepareVideoMirror(const struct msm_frame *frame, int index)
+bool QCameraStream_record::prepareVideoFrame(const struct msm_frame *frame, int index)
 {
-    if (mVideoMirrorMode == LGE_VIDEO_MIRROR_OFF)
+    if (!mCopyVideoFrames && mVideoMirrorMode == LGE_VIDEO_MIRROR_OFF)
         return true;
     if (!frame || index < 0 || index >= mEncodeBufferCount
             || !mHalCamCtrl->mRecordingMemory.camera_memory[index])
         return false;
     camera_memory_t *output = mHalCamCtrl->mRecordingMemory.camera_memory[index];
+#ifdef LGE_CAMERA_OREO_FRAME_COMPAT
+    if (mCopyVideoFrames) {
+        const LgeFrame420 input = {
+            reinterpret_cast<uint8_t *>(frame->buffer), frame->ion_alloc.len,
+            static_cast<size_t>(mVideoMirrorWidth), static_cast<size_t>(mVideoMirrorHeight),
+            static_cast<size_t>(mVideoMirrorStride), frame->y_off, frame->cbcr_off
+        };
+        if (!lgePackVideo420(input, static_cast<uint8_t *>(output->data), output->size,
+                mHalCamCtrl->mPreviewFormat == CAMERA_YUV_420_NV21, mVideoMirrorMode)) {
+            ALOGE("Oreo camera: invalid raw video layout");
+            return false;
+        }
+        return true;
+    }
+#endif
     if (frame->y_off != 0 || frame->cbcr_off != mVideoMirrorCbcrOffset
             || !lgeMirrorVideo420(reinterpret_cast<const uint8_t *>(frame->buffer),
                 frame->ion_alloc.len, static_cast<uint8_t *>(output->data), output->size,
@@ -231,9 +250,10 @@ bool QCameraStream_record::prepareVideoMirror(const struct msm_frame *frame, int
     return true;
 }
 
-camera_memory_t *QCameraStream_record::getMirroredVideoBuffer(int index)
+camera_memory_t *QCameraStream_record::getVideoFrameBuffer(int index)
 {
-    if (mVideoMirrorMode == LGE_VIDEO_MIRROR_OFF || index < 0 || index >= mEncodeBufferCount)
+    if ((!mCopyVideoFrames && mVideoMirrorMode == LGE_VIDEO_MIRROR_OFF)
+            || index < 0 || index >= mEncodeBufferCount)
         return NULL;
     return mHalCamCtrl->mRecordingMemory.camera_memory[index];
 }
@@ -255,7 +275,10 @@ status_t QCameraStream_record::initEncodeBuffers()
     else if (flip && !strcmp(flip, "flip-v"))
         mVideoMirrorMode = LGE_VIDEO_MIRROR_VERTICAL;
 
-    if (mVideoMirrorMode != LGE_VIDEO_MIRROR_OFF) {
+#ifdef LGE_CAMERA_OREO_FRAME_COMPAT
+    mCopyVideoFrames = !mHalCamCtrl->mStoreMetaDataInFrame;
+#endif
+    if (mCopyVideoFrames || mVideoMirrorMode != LGE_VIDEO_MIRROR_OFF) {
         int outputs = 0;
         if (cam_config_get_parm(mCameraId, MM_CAMERA_PARM_VFE_OUTPUT_ENABLE, &outputs) != MM_CAMERA_OK
                 || outputs != 1 || (mHalCamCtrl->mPreviewFormat != CAMERA_YUV_420_NV21
@@ -278,7 +301,7 @@ status_t QCameraStream_record::initEncodeBuffers()
             return BAD_VALUE;
         }
         const int size = mHalCamCtrl->mPreviewMemory.private_buffer_handle[0]->size;
-        if (mVideoMirrorWidth <= 0 || mVideoMirrorHeight <= 0
+        if (size <= 0 || mVideoMirrorWidth <= 0 || mVideoMirrorHeight <= 0
                 || (mVideoMirrorWidth & 1) || (mVideoMirrorHeight & 1)
                 || mVideoMirrorStride < mVideoMirrorWidth
                 || static_cast<size_t>(mVideoMirrorCbcrOffset) < static_cast<size_t>(mVideoMirrorStride) * mVideoMirrorHeight
@@ -295,27 +318,58 @@ status_t QCameraStream_record::initEncodeBuffers()
                 return BAD_VALUE;
             }
         }
-        if (mHalCamCtrl->initHeapMem(&mHalCamCtrl->mRecordingMemory, count, size,
-                0, mVideoMirrorCbcrOffset, MSM_PMEM_VIDEO, NULL, NULL, 0, NULL) < 0) {
-            releaseEncodeBuffer();
-            return NO_MEMORY;
-        }
-        for (int index = 0; index < count; ++index) {
-            camera_memory_t *memory = mHalCamCtrl->mRecordingMemory.camera_memory[index];
-            if (mHalCamCtrl->mRecordingMemory.fd[index] < 0 || !memory
-                    || !memory->data || memory->data == MAP_FAILED || memory->size < static_cast<size_t>(size)) {
+#ifdef LGE_CAMERA_OREO_FRAME_COMPAT
+        if (mCopyVideoFrames) {
+            size_t packedSize;
+            if (!lgePacked420Size(mVideoMirrorWidth, mVideoMirrorHeight, &packedSize)
+                    || packedSize > static_cast<size_t>(size)) {
+                releaseEncodeBuffer();
+                return BAD_VALUE;
+            }
+            QCameraHalHeap_t *heap = &mHalCamCtrl->mRecordingMemory;
+            for (int index = 0; index < MM_CAMERA_MAX_NUM_FRAMES; ++index) {
+                heap->fd[index] = -1;
+                heap->main_ion_fd[index] = -1;
+            }
+            heap->size = packedSize;
+            heap->buffer_count = count;
+            for (int index = 0; index < count; ++index) {
+                heap->camera_memory[index] = mHalCamCtrl->mGetMemory(
+                        -1, packedSize, 1, mHalCamCtrl->mCallbackCookie);
+                camera_memory_t *memory = heap->camera_memory[index];
+                if (!memory || !memory->data || memory->data == MAP_FAILED
+                        || memory->size < packedSize) {
+                    releaseEncodeBuffer();
+                    return NO_MEMORY;
+                }
+            }
+            ALOGI("Oreo camera: %d independent NV12 video buffers, %zu bytes each", count, packedSize);
+        } else
+#endif
+        {
+            if (mHalCamCtrl->initHeapMem(&mHalCamCtrl->mRecordingMemory, count, size,
+                    0, mVideoMirrorCbcrOffset, MSM_PMEM_VIDEO, NULL, NULL, 0, NULL) < 0) {
                 releaseEncodeBuffer();
                 return NO_MEMORY;
             }
-            memset(memory->data, 0, memory->size);
+            for (int index = 0; index < count; ++index) {
+                camera_memory_t *memory = mHalCamCtrl->mRecordingMemory.camera_memory[index];
+                if (mHalCamCtrl->mRecordingMemory.fd[index] < 0 || !memory
+                        || !memory->data || memory->data == MAP_FAILED || memory->size < static_cast<size_t>(size)) {
+                    releaseEncodeBuffer();
+                    return NO_MEMORY;
+                }
+                memset(memory->data, 0, memory->size);
+            }
+            ALOGI("LG virtual front: encoder pixel mirror enabled (%s)", flip);
         }
-        ALOGI("LG virtual front: encoder pixel mirror enabled (%s)", flip);
     }
+#ifndef LGE_CAMERA_OREO_FRAME_COMPAT
     for (int index = 0; index < count; ++index) {
         if (!mHalCamCtrl->mStoreMetaDataInFrame)
             continue;
         camera_memory_t *memory = mHalCamCtrl->mGetMemory(-1,
-                sizeof(struct encoder_media_buffer_type), 1, this);
+                sizeof(struct encoder_media_buffer_type), 1, mHalCamCtrl->mCallbackCookie);
         if (!memory || !memory->data || memory->data == MAP_FAILED) {
             if (memory)
                 memory->release(memory);
@@ -345,6 +399,7 @@ status_t QCameraStream_record::initEncodeBuffers()
             handle->data[3] = (uint32_t)mHalCamCtrl->mPreviewMemory.camera_memory[index]->data;
         }
     }
+#endif
     return NO_ERROR;
 }
 
@@ -361,9 +416,10 @@ void QCameraStream_record::releaseEncodeBuffer()
         memory->release(memory);
         mHalCamCtrl->mRecordingMemory.metadata_memory[index] = NULL;
     }
-    if (mVideoMirrorMode != LGE_VIDEO_MIRROR_OFF)
+    if (mCopyVideoFrames || mVideoMirrorMode != LGE_VIDEO_MIRROR_OFF)
         mHalCamCtrl->releaseHeapMem(&mHalCamCtrl->mRecordingMemory);
     mVideoMirrorMode = LGE_VIDEO_MIRROR_OFF;
+    mCopyVideoFrames = false;
     mEncodeBufferCount = 0;
 }
 

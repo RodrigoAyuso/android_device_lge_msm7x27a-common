@@ -224,6 +224,10 @@ static const str_map iso[] = {
 };
 
 static const str_map scenemode[] = {
+#ifdef LGE_CAMERA_NATIVE_HDR_EFFECT
+    // The driver keeps normal exposure; the native library handles the look.
+    { "hdr",                                      CAMERA_BESTSHOT_OFF },
+#endif
     { QCameraParameters::SCENE_MODE_AUTO,           CAMERA_BESTSHOT_OFF },
     { QCameraParameters::SCENE_MODE_ASD,            CAMERA_BESTSHOT_AUTO },
     { QCameraParameters::SCENE_MODE_ACTION,         CAMERA_BESTSHOT_ACTION },
@@ -1121,10 +1125,15 @@ void QCameraHardwareInterface::initDefaultParameters()
     else
         mParameters.set(QCameraParameters::KEY_AUTO_WHITEBALANCE_LOCK_SUPPORTED, "false");
 
+#ifdef LGE_CAMERA_NATIVE_HDR_EFFECT
+    mParameters.set(QCameraParameters::KEY_QC_HDR_SUPPORTED, "true");
+    mParameters.set("lge-native-hdr-effect", "single-frame-v1");
+#else
     if(cam_config_is_parm_supported(mCameraId, MM_CAMERA_PARM_HDR))
         mParameters.set(QCameraParameters::KEY_QC_HDR_SUPPORTED, "true");
     else
         mParameters.set(QCameraParameters::KEY_QC_HDR_SUPPORTED, "false");
+#endif
 
     //Set Focus Mode
     if(mHasAutoFocusSupport){
@@ -1281,8 +1290,13 @@ void QCameraHardwareInterface::initDefaultParameters()
     //Set ZSL
     mParameters.set(QCameraParameters::KEY_QC_ZSL,
                     QCameraParameters::ZSL_OFF);
+#ifdef LGE_CAMERA_DISABLE_ZSL
+    // Snap treats any zsl-values list as ZSL support, including "off" alone.
+    mParameters.remove(QCameraParameters::KEY_QC_SUPPORTED_ZSL_MODES);
+#else
     mParameters.set(QCameraParameters::KEY_QC_SUPPORTED_ZSL_MODES,
                     mZslValues);
+#endif
 
     //Set Focal length, horizontal and vertical view angles
     float focalLength = 0.0f;
@@ -1333,6 +1347,9 @@ void QCameraHardwareInterface::initDefaultParameters()
       int flag = 0;
 
       for (int i = 0; i < HAL_CAM_MODE_MAX; i++) {
+#ifdef LGE_CAMERA_DISABLE_ZSL
+        if (i != 0) continue;
+#endif
         if ( 0 ) { /*exclude some conflicting case*/
         } else {
           if (flag == 0) { /*first item*/
@@ -1347,8 +1364,13 @@ void QCameraHardwareInterface::initDefaultParameters()
       mParameters.set("camera-mode-values", CamModeStr);
     }
 
+#ifdef LGE_CAMERA_NATIVE_HDR_EFFECT
+    // Hide the unrelated vendor exposure-fusion menu. Use the HDR scene button.
+    mParameters.remove("ae-bracket-hdr-values");
+#else
     mParameters.set("ae-bracket-hdr-values",
       create_values_str(hdr_bracket, sizeof(hdr_bracket)/sizeof(str_map) ));
+#endif
 
 // if(mIs3DModeOn)
 //     mParameters.set("3d-frame-format", "left-right");
@@ -2169,6 +2191,12 @@ status_t QCameraHardwareInterface::setSceneMode(const QCameraParameters& params)
 
     rc = cam_config_is_parm_supported(mCameraId, MM_CAMERA_PARM_BESTSHOT_MODE);
     if(!rc) {
+#ifdef LGE_CAMERA_NATIVE_HDR_EFFECT
+        const char *scene = params.get(QCameraParameters::KEY_SCENE_MODE);
+        // The native effect also works without a driver BESTSHOT control.
+        if (scene && (!strcmp(scene, "hdr") || !strcmp(scene, "auto")))
+            mParameters.set(QCameraParameters::KEY_SCENE_MODE, scene);
+#endif
         ALOGE("%s:Parameter Scenemode is not supported for this sensor", __func__);
         return NO_ERROR;
     }
@@ -2683,6 +2711,11 @@ status_t QCameraHardwareInterface::setVideoSize(const QCameraParameters& params)
 
 status_t QCameraHardwareInterface::setCameraMode(const QCameraParameters& params) {
     int32_t value = params.getInt(QCameraParameters::KEY_QC_CAMERA_MODE);
+#ifdef LGE_CAMERA_DISABLE_ZSL
+    // Old preferences may still request mode 1; retain the normal capture path.
+    value = 0;
+    mParameters.set(QCameraParameters::KEY_QC_ZSL, QCameraParameters::ZSL_OFF);
+#endif
     mParameters.set(QCameraParameters::KEY_QC_CAMERA_MODE,value);
 
     ALOGI("ZSL is enabled  %d", value);
@@ -3291,6 +3324,13 @@ status_t QCameraHardwareInterface::setFaceDetection(const char *str)
 
 status_t QCameraHardwareInterface::setAEBracket(const QCameraParameters& params)
 {
+#ifdef LGE_CAMERA_NATIVE_HDR_EFFECT
+    // Never route Snap's HDR scene to the old daemon or allocate burst frames.
+    (void)params;
+    mHdrMode = HDR_BRACKETING_OFF;
+    mParameters.set(QCameraParameters::KEY_QC_AE_BRACKET_HDR, "Off");
+    return NO_ERROR;
+#else
     if(!cam_config_is_parm_supported(mCameraId,MM_CAMERA_PARM_HDR) || (myMode & CAMERA_ZSL_MODE)) {
         ALOGI("Parameter HDR is not supported for this sensor/ ZSL mode");
 
@@ -3390,6 +3430,7 @@ status_t QCameraHardwareInterface::setAEBracket(const QCameraParameters& params)
         mParameters.set(QCameraParameters::KEY_QC_AE_BRACKET_HDR, str);
     }
     return NO_ERROR;
+#endif
 }
 
 status_t QCameraHardwareInterface::setCaptureBurstExp()
@@ -3397,8 +3438,7 @@ status_t QCameraHardwareInterface::setCaptureBurstExp()
     char burst_exp[PROPERTY_VALUE_MAX];
     memset(burst_exp, 0, sizeof(burst_exp));
     property_get("persist.capture.burst.exposures", burst_exp, "");
-    if (NULL != burst_exp)
-      mParameters.set("capture-burst-exposures", burst_exp);
+    mParameters.set("capture-burst-exposures", burst_exp);
     return NO_ERROR;
 }
 
@@ -3738,6 +3778,10 @@ int QCameraHardwareInterface::getJpegQuality() const
 
 int QCameraHardwareInterface::getNumOfSnapshots(void) const
 {
+#ifdef LGE_CAMERA_NATIVE_HDR_EFFECT
+    if (isNativeHdrEffect())
+        return 1;
+#endif
     char prop[PROPERTY_VALUE_MAX];
     memset(prop, 0, sizeof(prop));
     property_get("persist.camera.snapshot.number", prop, "0");
@@ -3753,6 +3797,12 @@ int QCameraHardwareInterface::getNumOfSnapshots(void) const
 
 int QCameraHardwareInterface::getNumOfSnapshots(const QCameraParameters& params)
 {
+#ifdef LGE_CAMERA_NATIVE_HDR_EFFECT
+    if (isNativeHdrEffect()) {
+        mParameters.set("num-snaps-per-shutter", 1);
+        return 1;
+    }
+#endif
     char prop[PROPERTY_VALUE_MAX];
     memset(prop, 0, sizeof(prop));
     property_get("persist.camera.snapshot.number", prop, "0");
@@ -4202,12 +4252,12 @@ void QCameraHardwareInterface::addExifTag(exif_tag_id_t tagid, exif_tag_type_t t
 
 rat_t getRational(int num, int denom)
 {
-    rat_t temp = {num, denom};
+    rat_t temp = {static_cast<uint32_t>(num), static_cast<uint32_t>(denom)};
     return temp;
 }
 
 void QCameraHardwareInterface::initExifData(){
-    if(mExifValues.dateTime) {
+    if(mExifValues.dateTime[0] != '\0') {
         addExifTag(EXIFTAGID_EXIF_DATE_TIME_ORIGINAL, EXIF_ASCII,
                   20, 1, (void *)mExifValues.dateTime);
     }
@@ -4223,7 +4273,7 @@ void QCameraHardwareInterface::initExifData(){
     if(mExifValues.mLatitude) {
         addExifTag(EXIFTAGID_GPS_LATITUDE, EXIF_RATIONAL, 3, 1, (void *)mExifValues.latitude);
 
-        if(mExifValues.latRef) {
+        if(mExifValues.latRef[0] != '\0') {
             addExifTag(EXIFTAGID_GPS_LATITUDE_REF, EXIF_ASCII, 2,
                                     1, (void *)mExifValues.latRef);
         }
@@ -4232,7 +4282,7 @@ void QCameraHardwareInterface::initExifData(){
     if(mExifValues.mLongitude) {
         addExifTag(EXIFTAGID_GPS_LONGITUDE, EXIF_RATIONAL, 3, 1, (void *)mExifValues.longitude);
 
-        if(mExifValues.lonRef) {
+        if(mExifValues.lonRef[0] != '\0') {
             addExifTag(EXIFTAGID_GPS_LONGITUDE_REF, EXIF_ASCII, 2,
                                 1, (void *)mExifValues.lonRef);
         }

@@ -30,7 +30,7 @@
 //#include <binder/MemoryHeapPmem.h>
 #include <utils/threads.h>
 #include <cutils/properties.h>
-#include <camera/Camera.h>
+#include <utils/Timers.h>
 #include "QCameraParameters.h"
 #include <system/window.h>
 #include <system/camera.h>
@@ -79,12 +79,14 @@ struct preview_format_info_t {
    int num_planar;
 };
 
+#ifdef QCOM_HARDWARE
 enum {
     CAMERA_SUPPORT_MODE_2D = 0x01, /* Camera Sensor supports 2D mode. */
     CAMERA_SUPPORT_MODE_3D = 0x02, /* Camera Sensor supports 3D mode. */
     CAMERA_SUPPORT_MODE_NONZSL = 0x04, /* Camera Sensor in NON-ZSL mode. */
     CAMERA_SUPPORT_MODE_ZSL = 0x08 /* Camera Sensor supports ZSL mode. */
 };
+#endif
 
 typedef enum {
   CAMERA_STATE_UNINITED,
@@ -255,6 +257,9 @@ public:
 
     /** Set the ANativeWindow to which preview frames are sent */
     int setPreviewWindow(preview_stream_ops_t* window);
+
+    void setLogicalCameraId(int cameraId) { mLogicalCameraId = cameraId; }
+    bool isVirtualFrontCamera() const { return mLogicalCameraId == 1 && mCameraId == 0; }
 
     /** Set the notification and data callbacks */
     void setCallbacks(camera_notify_callback notify_cb,
@@ -658,6 +663,9 @@ private:
     int32_t createRdi();
 
     int getHDRMode();
+#ifdef LGE_CAMERA_NATIVE_HDR_EFFECT
+    bool isNativeHdrEffect() const;
+#endif
     //EXIF
     void addExifTag(exif_tag_id_t tagid, exif_tag_type_t type,
                         uint32_t count, uint8_t copy, void *data);
@@ -674,6 +682,7 @@ private:
     status_t setStreamFlipHint(const QCameraParameters &params);
 
     int           mCameraId;
+    int           mLogicalCameraId;
     camera_mode_t myMode;
 
     QCameraParameters    mParameters;
