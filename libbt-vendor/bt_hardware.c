@@ -23,6 +23,8 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <termios.h>
+#include <stdio.h>
+#include <unistd.h>
 
 #include <bt_hardware.h>
 #include <bt_helper.h>
@@ -33,27 +35,31 @@ int bt_hardware_power(bool enable)
 {
 	char *value = enable ? "1" : "0";
 
-	if (bt_hardware_power_state_path == NULL)
+	if (bt_hardware_power_state_path[0] == '\0')
 		return -1;
 
-	write_value(bt_hardware_power_state_path, value, 1);
+	if (write_value(bt_hardware_power_state_path, value, 1) < 0)
+		return -1;
 
 	// TODO: Replace this.
 	if (enable)
-		bt_hardware_download_firmware();
+		return bt_hardware_download_firmware();
 
 	return 0;
 }
 
 int bt_hardware_serial(bool _open)
 {
-	static int fd;
+	static int fd = -1;
 	struct termios term;
 
 	if (_open)
 		fd = open(BT_HS_UART_DEVICE, (O_RDWR | O_NOCTTY));
-	else
-		close(fd);
+	else {
+		if (fd >= 0) close(fd);
+		fd = -1;
+		return 0;
+	}
 
 	if (_open) {
 		if (tcflush(fd, TCIOFLUSH) < 0) {
@@ -96,7 +102,11 @@ int bt_hardware_download_firmware(void)
 		bt_vendor_local_bdaddr[0], bt_vendor_local_bdaddr[1],
 		bt_vendor_local_bdaddr[2], bt_vendor_local_bdaddr[3],
 		bt_vendor_local_bdaddr[4], bt_vendor_local_bdaddr[5]);
-	system(mac_argument);
+	int status = system(mac_argument);
+	if (status != 0) {
+		ALOGE("hci_qcomm_init failed, wait status=%d", status);
+		return -1;
+	}
 	return 0;
 }
 

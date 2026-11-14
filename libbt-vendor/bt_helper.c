@@ -20,6 +20,9 @@
 #include <cutils/log.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
 
 int bt_get_rfkill_state_path(char *state_path, size_t size)
 {
@@ -29,7 +32,7 @@ int bt_get_rfkill_state_path(char *state_path, size_t size)
 	int id;
 
 	char buf[16];
-	size_t buf_size;
+	ssize_t buf_size;
 
 	for (id = 0; ;id++) {
 		snprintf(path, sizeof(path), "/sys/class/rfkill/rfkill%d/type", id);
@@ -57,7 +60,7 @@ int write_value(const char *path, const char *value, size_t size)
 {
 	int ret;
 	int fd;
-	size_t buf_size;
+	ssize_t buf_size;
 	char *buffer;
 
 	fd = open(path, O_WRONLY);
@@ -68,7 +71,7 @@ int write_value(const char *path, const char *value, size_t size)
 	}
 
 	buf_size = write(fd, value, size);
-	if (buf_size != size) {
+	if (buf_size < 0 || (size_t)buf_size != size) {
 		ALOGE("write(%s) failed: %s (%d)", path, strerror(errno), errno);
 		ret = -1;
 		goto out;

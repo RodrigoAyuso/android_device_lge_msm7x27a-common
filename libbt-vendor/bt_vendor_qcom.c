@@ -20,6 +20,7 @@
 
 #include <cutils/log.h>
 #include <errno.h>
+#include <unistd.h>
 
 #include <bt_vendor_lib.h>
 
@@ -27,6 +28,7 @@
 
 const bt_vendor_callbacks_t *bt_vendor_callbacks = NULL;
 unsigned char *bt_vendor_local_bdaddr = NULL;
+static bool bt_firmware_configured = false;
 
 static int bt_vendor_qcom_init(const bt_vendor_callbacks_t *p_cb,
 	unsigned char *local_bdaddr)
@@ -35,11 +37,12 @@ static int bt_vendor_qcom_init(const bt_vendor_callbacks_t *p_cb,
 
 	ALOGD_IF(BT_DEBUG, "initializing.");
 
-	if (p_cb == NULL) {
+	if (p_cb == NULL || local_bdaddr == NULL) {
 		ALOGE("init failed: no vendor callbacks.");
 		return -EINVAL;
 	}
 
+	bt_firmware_configured = false;
 	bt_vendor_callbacks = p_cb;
 	bt_vendor_local_bdaddr = local_bdaddr;
 
@@ -59,8 +62,14 @@ static int bt_vendor_qcom_op(bt_vendor_opcode_t opcode, void *param)
 	case BT_VND_OP_POWER_CTRL:
 		power_state = *(uint8_t *)param;
 		switch (power_state) {
-		case BT_VND_PWR_OFF: bt_hardware_power(false); break;
-		case BT_VND_PWR_ON: bt_hardware_power(true); break;
+		case BT_VND_PWR_OFF:
+			bt_firmware_configured = false;
+			return bt_hardware_power(false);
+		case BT_VND_PWR_ON: {
+			int ret = bt_hardware_power(true);
+			bt_firmware_configured = (ret == 0);
+			return ret;
+		}
 		}
 		break;
 	/* As of current state, firmware is downloaded by the hci_qcomm_init
@@ -69,19 +78,23 @@ static int bt_vendor_qcom_op(bt_vendor_opcode_t opcode, void *param)
 	 * Report dummy success here. */
 	case BT_VND_OP_FW_CFG:
 		sleep(1); /* There seems to be a race condition. */
-		bt_vendor_callbacks->fwcfg_cb(BT_VND_OP_RESULT_SUCCESS);
+		bt_vendor_callbacks->fwcfg_cb(bt_firmware_configured
+			? BT_VND_OP_RESULT_SUCCESS : BT_VND_OP_RESULT_FAIL);
 		break;
 	case BT_VND_OP_SCO_CFG:
 		bt_vendor_callbacks->scocfg_cb(BT_VND_OP_RESULT_SUCCESS);
 		break;
 	case BT_VND_OP_USERIAL_OPEN:
 		fd = bt_hardware_serial(true);
-		if (fd > 0) {
+		if (fd >= 0) {
 			int (*fd_array)[] = (int (*) []) param;
 			(*fd_array)[CH_CMD] = fd;
 			(*fd_array)[CH_EVT] = fd;
 			(*fd_array)[CH_ACL_OUT] = fd;
 			(*fd_array)[CH_ACL_IN] = fd;
+		} else {
+			ALOGE("USERIAL_OPEN failed: %d", fd);
+			return 0;
 		}
 		/* Set return value to 1 (UART) */
 		return 1;
@@ -89,6 +102,8 @@ static int bt_vendor_qcom_op(bt_vendor_opcode_t opcode, void *param)
 		bt_hardware_serial(false);
 		break;
 	case BT_VND_OP_GET_LPM_IDLE_TIMEOUT:
+		if (param == NULL) return -EINVAL;
+		*(uint32_t *)param = 0;
 		break;
 	case BT_VND_OP_LPM_SET_MODE:
 		bt_vendor_callbacks->lpm_cb(BT_VND_OP_RESULT_SUCCESS);

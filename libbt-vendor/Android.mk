@@ -1,3 +1,6 @@
+# Vee3 Oreo traverses this module explicitly.
+ifndef LGE_MSM7X27A_BT_VENDOR_INCLUDED
+LGE_MSM7X27A_BT_VENDOR_INCLUDED := true
 #
 # Copyright (C) 2013  Rudolf Tammekivi <rtammekivi@gmail.com>
 #
@@ -38,6 +41,7 @@ LOCAL_C_INCLUDES += \
 
 LOCAL_SHARED_LIBRARIES := libc libcutils liblog
 
-LOCAL_CLANG := false
+LOCAL_CLANG := true
 
 include $(BUILD_SHARED_LIBRARY)
+endif
