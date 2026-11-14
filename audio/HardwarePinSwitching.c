@@ -28,6 +28,7 @@
 
 #include <HardwarePinSwitching.h>
 #include <stdint.h>
+#include <string.h>
 #include <sys/types.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -122,10 +123,6 @@ static int marimba_write
               msgs[0].flags = 0;
               msgs[0].buf = (__u8*)offset_data;
               msgs[0].len = (1 + len) * sizeof(*offset_data);
-
-        if (NULL == offset_data) {
-                return -1;
-        }
 
         offset_data[0] = offset;
         memcpy(offset_data + 1, buf, len);

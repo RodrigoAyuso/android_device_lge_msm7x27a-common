@@ -18,6 +18,7 @@
 */
 
 #include <math.h>
+#include <errno.h>
 
 //#define LOG_NDEBUG 0
 #define LOG_TAG "AudioHardware7x27A"
@@ -847,8 +848,6 @@ static status_t do_route_audio_rpc(uint32_t device, bool ear_mute,
            return -1;
     }
 
-    CAD_HW_DEVICE_ID_CURRENT_RX = args.device.rx_device;
-    CAD_HW_DEVICE_ID_CURRENT_TX = args.device.tx_device;
     if ((device != SND_DEVICE_CURRENT) && (!mic_mute)
 #ifdef QCOM_FM_ENABLED
       && (device != SND_DEVICE_FM_DIGITAL_STEREO_HEADSET)
@@ -870,6 +869,9 @@ static status_t do_route_audio_rpc(uint32_t device, bool ear_mute,
         return -EIO;
     }
 
+    // Publish the route only after the final driver operation succeeds.
+    CAD_HW_DEVICE_ID_CURRENT_RX = args.device.rx_device;
+    CAD_HW_DEVICE_ID_CURRENT_TX = args.device.tx_device;
     return NO_ERROR;
 }
 
@@ -986,7 +988,7 @@ status_t AudioHardware::doRouting(AudioStreamInMSM72xx *input,
                     ALOGI("Routing audio to Wired Headset\n");
                     new_snd_device = SND_DEVICE_HEADSET;
             } else if (outputDevices == AUDIO_DEVICE_OUT_WIRED_HEADPHONE) {
-                    ALOGI("Routing audio to No microphone Wired Headphone (%d,%x)\n");
+                    ALOGI("Routing audio to No microphone Wired Headphone\n");
                     new_snd_device = SND_DEVICE_HEADSET;
 #ifdef QCOM_FM_ENABLED
             } else if (inputDevice & AUDIO_DEVICE_IN_FM_RX_A2DP) {
@@ -1104,6 +1106,11 @@ status_t AudioHardware::doRouting(AudioStreamInMSM72xx *input,
 
     if (new_snd_device != -1 && new_snd_device != mCurSndDevice) {
         ret = doAudioRouteOrMute(new_snd_device);
+        if (ret != NO_ERROR) {
+            ALOGE("CAD route %d failed (%d); keeping route retryable",
+                    new_snd_device, ret);
+            return ret;
+        }
 
         //disable post proc first for previous session
         if (hpcm_playback_in_progress) {
@@ -1188,6 +1195,10 @@ status_t AudioHardware::dumpInternals(int fd, const Vector<String16>& args)
     char buffer[SIZE];
     String8 result;
     result.append("AudioHardware::dumpInternals\n");
+    snprintf(buffer, SIZE, "\tmCurSndDevice: %d\n", mCurSndDevice);
+    result.append(buffer);
+    snprintf(buffer, SIZE, "\tmCadFd: %d\n", m7xsnddriverfd);
+    result.append(buffer);
     snprintf(buffer, SIZE, "\tmInit: %s\n", mInit? "true": "false");
     result.append(buffer);
     snprintf(buffer, SIZE, "\tmMicMute: %s\n", mMicMute? "true": "false");
@@ -1218,7 +1229,9 @@ uint32_t AudioHardware::getInputSampleRate(uint32_t sampleRate)
     uint32_t delta;
 
     for (i = 0, prevDelta = 0xFFFFFFFF; i < sizeof(inputSamplingRates)/sizeof(uint32_t); i++, prevDelta = delta) {
-        delta = abs(sampleRate - inputSamplingRates[i]);
+        delta = sampleRate >= inputSamplingRates[i]
+                ? sampleRate - inputSamplingRates[i]
+                : inputSamplingRates[i] - sampleRate;
         if (delta > prevDelta) break;
     }
     // i is always > 0 here
@@ -1265,8 +1278,9 @@ status_t AudioHardware::AudioStreamOutMSM72xx::set(AudioHardware *hw,
         if (pFormat) *pFormat = format();
         if (pChannels) *pChannels = channels();
         if (pRate) *pRate = sampleRate();
-        ALOGE("AudioStreamOutMSM72xx: Setting up correct values");
-        return NO_ERROR;
+        // Report the proposed configuration so Oreo can reopen correctly.
+        ALOGW("AudioStreamOutMSM72xx: retry with native PCM configuration");
+        return BAD_VALUE;
     }
 
     if (pFormat) *pFormat = lFormat;
@@ -1286,102 +1300,111 @@ AudioHardware::AudioStreamOutMSM72xx::~AudioStreamOutMSM72xx()
 ssize_t AudioHardware::AudioStreamOutMSM72xx::write(const void *buffer,
         size_t bytes)
 {
-    //ALOGE("AudioStreamOutMSM72xx::write(%p, %u)", buffer, bytes);
     status_t status = NO_INIT;
     size_t count = bytes;
     const uint8_t *p = static_cast<const uint8_t*>(buffer);
+    unsigned int noProgressRetries = 0;
+    // Retry transient writes for at most 20 ms, then let AudioFlinger recover.
+    const unsigned int maxNoProgressRetries = 20;
+
+    if (bytes == 0)
+        return 0;
 
     if (mStandby) {
-        // open driver
-        ALOGV("open driver");
         status = ::open("/dev/msm_pcm_out", O_RDWR);
         if (status < 0) {
-            ALOGE("Cannot open /dev/msm_pcm_out errno: %d", errno);
+            status = -errno;
+            ALOGE("Cannot open /dev/msm_pcm_out: %d", status);
             goto Error;
         }
         mFd = status;
 
-        // configuration
-        ALOGV("get config");
         struct msm_audio_config config;
-        status = ioctl(mFd, AUDIO_GET_CONFIG, &config);
-        if (status < 0) {
-            ALOGE("Cannot read config");
+        if (ioctl(mFd, AUDIO_GET_CONFIG, &config) < 0) {
+            status = -errno;
+            ALOGE("Cannot read PCM config: %d", status);
             goto Error;
         }
 
-        ALOGV("set config");
         config.channel_count = AudioSystem::popCount(channels());
         config.sample_rate = sampleRate();
         config.buffer_size = bufferSize();
         config.buffer_count = AUDIO_HW_NUM_OUT_BUF;
         config.type = CODEC_TYPE_PCM;
-        status = ioctl(mFd, AUDIO_SET_CONFIG, &config);
-        if (status < 0) {
-            ALOGE("Cannot set config");
+        if (ioctl(mFd, AUDIO_SET_CONFIG, &config) < 0) {
+            status = -errno;
+            ALOGE("Cannot set PCM config: %d", status);
             goto Error;
         }
 
-        ALOGV("buffer_size: %u", config.buffer_size);
-        ALOGV("buffer_count: %u", config.buffer_count);
-        ALOGV("channel_count: %u", config.channel_count);
-        ALOGV("sample_rate: %u", config.sample_rate);
+        // An earlier routing request may have failed while the DSP was starting.
+        // doRouting caches successful routes only; no service restart is needed.
+        status = mHardware->doRouting(NULL, mDevices);
+        if (status != NO_ERROR)
+            goto Error;
 
-        // fill 2 buffers before AUDIO_START
         mStartCount = AUDIO_HW_NUM_OUT_BUF;
         mStandby = false;
     }
 
     while (count) {
         ssize_t written = ::write(mFd, p, count);
-        if (written >= 0) {
+        if (written > 0) {
             count -= written;
             p += written;
+            noProgressRetries = 0;
+        } else if (written < 0 && (errno == EAGAIN || errno == EINTR)) {
+            const int writeError = errno;
+            ++mRetryCount;
+            if (++noProgressRetries >= maxNoProgressRetries) {
+                status = -writeError;
+                ALOGE("PCM write made no progress: %d", status);
+                goto Error;
+            }
+            usleep(1000);
         } else {
-            if (errno != EAGAIN)
-                return written;
-            mRetryCount++;
-            ALOGW("EAGAIN - retry");
+            status = written == 0 ? -EIO : -errno;
+            ALOGE("PCM write failed: %d", status);
+            goto Error;
         }
     }
 
-    // start audio after we fill 2 buffers
-    if (mStartCount) {
-        if (--mStartCount == 0) {
-            ioctl(mFd, AUDIO_START, 0);
-            hpcm_playback_in_progress = true;
-#ifdef SRS_PROCESSING
-            msm72xx_enable_srs(SRS_PARAMS_ALL, true);
-#endif /*SRS_PROCESSING*/
+    // Preserve the driver's two-buffer prefill protocol.
+    if (mStartCount && --mStartCount == 0) {
+        if (ioctl(mFd, AUDIO_START, 0) < 0) {
+            status = -errno;
+            ALOGE("PCM AUDIO_START failed: %d", status);
+            goto Error;
         }
+        hpcm_playback_in_progress = true;
+#ifdef SRS_PROCESSING
+        msm72xx_enable_srs(SRS_PARAMS_ALL, true);
+#endif /*SRS_PROCESSING*/
     }
     return bytes;
 
 Error:
-    if (mFd >= 0) {
-        ::close(mFd);
-        mFd = -1;
-    }
-   // Simulate audio output timing in case of error
-    usleep(bytes * 1000000 / frameSize() / sampleRate());
-
+    // Close stale state even after a failed start or a failed partial write.
+    // The next real write reopens/configures/routes the physical device.
+    standby();
+    usleep(bytes * 1000000ULL / frameSize() / sampleRate());
     return status;
 }
 
 status_t AudioHardware::AudioStreamOutMSM72xx::standby()
 {
-    status_t status = NO_ERROR;
-    if (!mStandby && mFd >= 0) {
-        //disable post processing
-        hpcm_playback_in_progress = false;
 #ifdef SRS_PROCESSING
+    if (hpcm_playback_in_progress)
         msm72xx_enable_srs(SRS_PARAMS_ALL, false);
 #endif /*SRS_PROCESSING*/
+    hpcm_playback_in_progress = false;
+    if (mFd >= 0) {
         ::close(mFd);
         mFd = -1;
     }
+    mStartCount = 0;
     mStandby = true;
-    return status;
+    return NO_ERROR;
 }
 
 status_t AudioHardware::AudioStreamOutMSM72xx::dump(int fd, const Vector<String16>& args)
@@ -1390,6 +1413,8 @@ status_t AudioHardware::AudioStreamOutMSM72xx::dump(int fd, const Vector<String1
     char buffer[SIZE];
     String8 result;
     result.append("AudioStreamOutMSM72xx::dump\n");
+    snprintf(buffer, SIZE, "\tmDevices: %#x\n", mDevices);
+    result.append(buffer);
     snprintf(buffer, SIZE, "\tsample rate: %d\n", sampleRate());
     result.append(buffer);
     snprintf(buffer, SIZE, "\tbuffer size: %d\n", bufferSize());
