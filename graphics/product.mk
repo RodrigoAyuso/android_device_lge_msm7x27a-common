@@ -11,6 +11,8 @@ PRODUCT_PACKAGES += \
 # These options keep the OpenGL HWUI pipeline; they do not select CPU Canvas.
 PRODUCT_PROPERTY_OVERRIDES += \
     ro.lge.graphics.profile=adreno \
+    ro.hardware.gralloc=lge_msm7x27a \
+    ro.hardware.egl=adreno \
     debug.lge.adreno=1 \
     debug.gralloc.map_fb_memory=1 \
     debug.hwui.renderer=opengl \
