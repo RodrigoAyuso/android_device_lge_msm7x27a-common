@@ -30,6 +30,13 @@
 
 namespace android_audio_legacy {
 
+// Oreo declares this optional method but libaudiohw_legacy has no base
+// definition. Keep the CAD stream override and report unsupported timestamps.
+status_t AudioStreamOut::getPresentationPosition(uint64_t*, struct timespec*)
+{
+    return INVALID_OPERATION;
+}
+
 extern "C" {
 
 struct qcom_audio_module {
