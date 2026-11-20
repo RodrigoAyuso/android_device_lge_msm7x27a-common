@@ -1,0 +1,3 @@
+# bootanimation waits for SurfaceFlinger before creating its EGL surface.
+on post-fs && property:ro.debuggable=1
+    start bootanim

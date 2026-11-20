@@ -1,0 +1,3 @@
+# Select the shared adapter before class main starts rild.
+on post-fs-data
+    setprop rild.libpath /system/lib/libril_lge_msm7x27a_compat.so

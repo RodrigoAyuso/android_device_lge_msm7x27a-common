@@ -33,7 +33,8 @@ LOCAL_MODULE_PATH := $(TARGET_OUT_VENDOR_SHARED_LIBRARIES)
 LOCAL_SRC_FILES := \
 	bt_vendor_qcom.c \
 	bt_hardware.c \
-	bt_helper.c
+	bt_helper.c \
+	keysize_probe.c
 
 LOCAL_C_INCLUDES += \
 	$(LOCAL_PATH)/include \
@@ -43,5 +44,7 @@ LOCAL_SHARED_LIBRARIES := libc libcutils liblog
 
 LOCAL_CLANG := true
 
+# V1 Bahama H4 capability compatibility; other devices use the raw UART.
+LOCAL_SRC_FILES += bahama_bridge.c bahama_h4.c
 include $(BUILD_SHARED_LIBRARY)
 endif

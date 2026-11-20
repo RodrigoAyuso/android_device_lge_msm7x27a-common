@@ -14,6 +14,8 @@
 
 $(call inherit-product, device/lge/msm7x27a-common/runtime/compat.mk)
 $(call inherit-product, device/lge/msm7x27a-common/graphics/product.mk)
+$(call inherit-product, device/lge/msm7x27a-common/boot/product.mk)
+$(call inherit-product, device/lge/msm7x27a-common/audio/product.mk)
 
 $(call inherit-product, device/common/gps/gps_us_supl.mk)
 $(call inherit-product, frameworks/native/build/phone-hdpi-512-dalvik-heap.mk)
@@ -32,6 +34,7 @@ endif
 # Common ramdisk
 PRODUCT_COPY_FILES += \
     device/lge/msm7x27a-common/rootdir/root/init.lge.shared.rc:root/init.lge.shared.rc \
+    device/lge/msm7x27a-common/boot/init.lge.oreo.rc:root/init.lge.oreo.rc \
     device/lge/msm7x27a-common/rootdir/root/fstab.lge.shared:root/fstab.lge.shared \
     device/lge/msm7x27a-common/rootdir/root/init.lge.usb.rc:root/init.lge.usb.rc
 
@@ -124,12 +127,8 @@ PRODUCT_PACKAGES += \
 PRODUCT_PACKAGES += \
     power.msm7x27a
 
-# Camera application: upstream Oreo Snap with its required JNI libraries.
-PRODUCT_PACKAGES += Snap
-
-# Camera Hal
-PRODUCT_PACKAGES += \
-    camera.msm7x27a
+# Shared camera application and HAL/provider selection.
+$(call inherit-product, device/lge/msm7x27a-common/camera/product.mk)
 
 # Legacy camera metadata contains pointers shared with the video encoder.
 PRODUCT_PROPERTY_OVERRIDES += \
@@ -276,3 +275,9 @@ ifneq ($(filter cm_v1 cm_vee3 lineage_v1 lineage_vee3,$(TARGET_PRODUCT)),)
 PRODUCT_COPY_FILES += \
     device/lge/msm7x27a-common/rootdir/system/etc/init/lge-launch-response.rc:system/etc/init/lge-launch-response.rc
 endif
+
+# Shared Volans Wi-Fi for V1 and Vee3.
+$(call inherit-product, device/lge/msm7x27a-common/connectivity/wifi/product.mk)
+
+# Shared legacy RIL v7 and SEEK ABI for V1 and Vee3.
+$(call inherit-product, device/lge/msm7x27a-common/radio-compat/product.mk)

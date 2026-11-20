@@ -1,0 +1,10 @@
+# Shared Android 8.1 boot transport for the second-generation LG products.
+on init && property:ro.lge.usb.functionfs=1
+    mkdir /dev/usb-ffs 0770 shell shell
+    mkdir /dev/usb-ffs/adb 0770 shell shell
+    mount functionfs adb /dev/usb-ffs/adb uid=2000,gid=2000
+
+# The ramdisk property is available before /system/build.prop is loaded.
+on post-fs && property:ro.lge.boot.graphics_early=1
+    start configstore-hal-1-0
+    start surfaceflinger

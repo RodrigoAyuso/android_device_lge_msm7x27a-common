@@ -1,0 +1,15 @@
+# Imported from the root ramdisk before /vendor/etc/init is scanned.
+# Oreo init keeps the first definition of a service name. Keep the stock names
+# and binaries; only add access to the existing legacy Qualcomm device nodes.
+# No root daemon, no world-writable devices, no changes to pairing/encryption.
+service bluetooth-1-0 /vendor/bin/hw/android.hardware.bluetooth@1.0-service
+    class hal
+    user bluetooth
+    group bluetooth system radio
+    writepid /dev/stune/foreground/tasks
+
+service ril-daemon /vendor/bin/hw/rild
+    class main
+    user radio
+    group radio cache inet misc audio log readproc wakelock system
+    capabilities BLOCK_SUSPEND NET_ADMIN NET_RAW

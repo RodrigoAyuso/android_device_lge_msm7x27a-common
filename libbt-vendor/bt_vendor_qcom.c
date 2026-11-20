@@ -25,6 +25,8 @@
 #include <bt_vendor_lib.h>
 
 #include <bt_hardware.h>
+#include "keysize_probe.h"
+#include "bahama_bridge.h"
 
 const bt_vendor_callbacks_t *bt_vendor_callbacks = NULL;
 unsigned char *bt_vendor_local_bdaddr = NULL;
@@ -43,6 +45,7 @@ static int bt_vendor_qcom_init(const bt_vendor_callbacks_t *p_cb,
 	}
 
 	bt_firmware_configured = false;
+	lge_bahama_prepare();
 	bt_vendor_callbacks = p_cb;
 	bt_vendor_local_bdaddr = local_bdaddr;
 
@@ -63,6 +66,7 @@ static int bt_vendor_qcom_op(bt_vendor_opcode_t opcode, void *param)
 		power_state = *(uint8_t *)param;
 		switch (power_state) {
 		case BT_VND_PWR_OFF:
+			lge_bt_keysize_cancel();
 			bt_firmware_configured = false;
 			return bt_hardware_power(false);
 		case BT_VND_PWR_ON: {
@@ -75,9 +79,11 @@ static int bt_vendor_qcom_op(bt_vendor_opcode_t opcode, void *param)
 	/* As of current state, firmware is downloaded by the hci_qcomm_init
 	 * binary. The binary cannot establish connection when userial is
 	 * opened, so we have to download it at power up.
-	 * Report dummy success here. */
+	 * FW_CFG preserves the actual result and qualifies the Bahama quirk. */
 	case BT_VND_OP_FW_CFG:
 		sleep(1); /* There seems to be a race condition. */
+		if (bt_firmware_configured && lge_bt_keysize_probe(bt_vendor_callbacks))
+			break;
 		bt_vendor_callbacks->fwcfg_cb(bt_firmware_configured
 			? BT_VND_OP_RESULT_SUCCESS : BT_VND_OP_RESULT_FAIL);
 		break;
@@ -87,6 +93,8 @@ static int bt_vendor_qcom_op(bt_vendor_opcode_t opcode, void *param)
 	case BT_VND_OP_USERIAL_OPEN:
 		fd = bt_hardware_serial(true);
 		if (fd >= 0) {
+			fd = lge_bahama_open(fd);
+			if (fd < 0) { bt_hardware_serial(false); return 0; }
 			int (*fd_array)[] = (int (*) []) param;
 			(*fd_array)[CH_CMD] = fd;
 			(*fd_array)[CH_EVT] = fd;
@@ -99,6 +107,7 @@ static int bt_vendor_qcom_op(bt_vendor_opcode_t opcode, void *param)
 		/* Set return value to 1 (UART) */
 		return 1;
 	case BT_VND_OP_USERIAL_CLOSE:
+		lge_bahama_close();
 		bt_hardware_serial(false);
 		break;
 	case BT_VND_OP_GET_LPM_IDLE_TIMEOUT:
@@ -120,6 +129,8 @@ static int bt_vendor_qcom_op(bt_vendor_opcode_t opcode, void *param)
 
 static void bt_vendor_qcom_cleanup(void)
 {
+	lge_bt_keysize_cancel();
+	lge_bahama_close();
 	ALOGD_IF(BT_DEBUG, "cleanup.");
 }
 

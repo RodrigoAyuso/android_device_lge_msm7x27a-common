@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import init.lge.usb.rc
+import /init.lge.oreo.rc
 
 on early-init
     # Permission for /proc/cmdline
@@ -324,3 +325,6 @@ on property:wlan.driver.status=ok
 
 on property:ro.data.large_tcp_window_size=true
     write /proc/sys/net/ipv4/tcp_adv_win_scale 1
+
+# Early Qualcomm service definitions for the gen2 products.
+import /init.lge.qualcomm-access.${ro.hardware}.rc

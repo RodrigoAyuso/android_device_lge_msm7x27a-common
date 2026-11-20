@@ -1,7 +1,8 @@
-# Oreo build entry for the existing LG HAL1 sources, Vee3 bring-up only.
+# Shared Oreo camera selection for V1 and Vee3.
 ifndef LGE_OREO_CAMERA_MODULES_INCLUDED
 LGE_OREO_CAMERA_MODULES_INCLUDED := true
-ifeq ($(TARGET_DEVICE):$(TARGET_BUILD_VARIANT),vee3:userdebug)
+ifneq ($(filter v1 vee3,$(TARGET_DEVICE)),)
+ifeq ($(TARGET_BUILD_VARIANT),userdebug)
 LOCAL_PATH := device/lge/msm7x27a-common/camera
 
 include $(CLEAR_VARS)
@@ -79,5 +80,6 @@ LOCAL_SHARED_LIBRARIES := \
     libcamera_client libcutils liblog libui libutils libhardware \
     libbinder libdl libnativewindow libmmcamera_interface2 liblge_camera_hdr_effect
 include $(BUILD_SHARED_LIBRARY)
+endif
 endif
 endif

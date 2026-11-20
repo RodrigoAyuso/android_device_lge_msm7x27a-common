@@ -1,7 +1,7 @@
 # Oreo bridge for the existing LG CAD HAL. Do not import the CM14 policy HAL.
 ifndef LGE_CAD_AUDIO_OREO_INCLUDED
 LGE_CAD_AUDIO_OREO_INCLUDED := true
-ifeq ($(TARGET_DEVICE),vee3)
+ifneq ($(filter v1 vee3,$(TARGET_DEVICE)),)
 ifeq ($(TARGET_BUILD_VARIANT),userdebug)
 LOCAL_PATH := device/lge/msm7x27a-common/audio
 include $(CLEAR_VARS)

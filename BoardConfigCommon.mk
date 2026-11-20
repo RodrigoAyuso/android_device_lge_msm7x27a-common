@@ -31,7 +31,16 @@ BOARD_MKBOOTIMG_ARGS := --ramdisk_offset 0x1200000
 BOARD_FLASH_BLOCK_SIZE := 131072
 TARGET_USERIMAGES_USE_EXT4 := true
 # Default Oreo gzip ramdisk; do not inherit the CM custom LZ4 recipes.
+ifneq ($(filter v1 vee3,$(TARGET_DEVICE)),)
+TARGET_KERNEL_ADDITIONAL_CONFIG := lineage_msm7x27a_oreo.config
+TARGET_RELEASETOOLS_EXTENSIONS := device/lge/msm7x27a-common/releasetools
+WITH_DEXPREOPT := true
+WITH_DEXPREOPT_BOOT_IMG_AND_SYSTEM_SERVER_ONLY := false
+DEX_PREOPT_DEFAULT := nostripping
+TARGET_BOOTANIMATION := device/lge/msm7x27a-common/boot/bootanimation.zip
+else
 KERNEL_CONFIG_OVERRIDE := CONFIG_RD_GZIP=y
+endif
 BOARD_KERNEL_IMAGE_NAME := zImage
 TARGET_USES_64_BIT_BINDER := true
 TARGET_USES_HWC2 := false
@@ -43,7 +52,6 @@ USE_OPENGL_RENDERER := true
 MALLOC_SVELTE := true
 BOARD_USES_LEGACY_MMAP := true
 TARGET_NEEDS_PLATFORM_TEXT_RELOCATIONS := true
-WITH_DEXPREOPT := false
 DEVICE_MANIFEST_FILE := device/lge/msm7x27a-common/manifest.xml
 # Keep upstream neverallow checks; SELinux permissive is userdebug-only.
 BOARD_SEPOLICY_DIRS += device/lge/msm7x27a-common/sepolicy
@@ -51,3 +59,23 @@ ifneq ($(TARGET_BUILD_VARIANT),userdebug)
 $(error The current Oreo port supports userdebug only)
 endif
 
+# Shared Bluetooth transport for V1 and Vee3.
+ifneq ($(filter v1 vee3,$(TARGET_DEVICE)),)
+DEVICE_MANIFEST_FILE += device/lge/msm7x27a-common/connectivity/bluetooth.xml
+endif
+
+# Shared Oreo camera selection for V1 and Vee3.
+ifneq ($(filter v1 vee3,$(TARGET_DEVICE)),)
+USE_DEVICE_SPECIFIC_CAMERA := true
+# Use the upstream Oreo HAL1 provider, with a separate cameraserver.
+TARGET_HAS_LEGACY_CAMERA_HAL1 := false
+DEVICE_MANIFEST_FILE += device/lge/msm7x27a-common/camera/manifest.xml
+endif
+
+# Shared Volans Wi-Fi for V1 and Vee3.
+include device/lge/msm7x27a-common/connectivity/wifi/BoardConfig.mk
+
+# Shared legacy RIL v7 and SEEK ABI for V1 and Vee3.
+ifneq ($(filter v1 vee3,$(TARGET_DEVICE)),)
+DEVICE_MANIFEST_FILE += device/lge/msm7x27a-common/radio-compat/manifest.xml
+endif
